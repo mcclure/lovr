@@ -743,9 +743,13 @@ static void openvrRenderTo(headsetRenderCallback callback, void* userdata) {
   float head[16], transform[16], projection[16];
   float (*matrix)[4];
 
+  Shader* shader = lovrGraphicsGetActiveShader();
+
   lovrGraphicsPushView();
   state.isRendering = true;
   state.compositor->WaitGetPoses(state.renderPoses, 16, NULL, 0);
+
+  lovrGraphicsPush();
 
   // Head transform
   matrix = state.renderPoses[state.headsetIndex].mDeviceToAbsoluteTracking.m;
@@ -764,13 +768,16 @@ static void openvrRenderTo(headsetRenderCallback callback, void* userdata) {
     mat4_fromMat44(projection, matrix);
 
     // Render
-    lovrCanvasBind(state.canvas);
-    lovrGraphicsPush();
-    lovrGraphicsMatrixTransform(MATRIX_VIEW, transform);
+    lovrGraphicsMatrixTransform(MATRIX_VIEW_LEFT + (eye - EYE_LEFT), transform);
     lovrGraphicsSetProjection(projection);
+  }
+
+  for (Headset eye = EYE_LEFT; eye <= EYE_RIGHT; eye++) {
+    int i = eye - EYE_LEFT;
+    lovrShaderSetInt(shader, "lovrEye", &i, 1);
+    lovrCanvasBind(state.canvas);
     lovrGraphicsClear(true, true);
     callback(eye, userdata);
-    lovrGraphicsPop();
     lovrCanvasResolveMSAA(state.canvas);
 
     // OpenVR changes the OpenGL texture binding, so we reset it after rendering
@@ -790,6 +797,7 @@ static void openvrRenderTo(headsetRenderCallback callback, void* userdata) {
   }
 
   state.isRendering = false;
+  lovrGraphicsPop();
   lovrGraphicsPopView();
 
   if (state.isMirrored) {
