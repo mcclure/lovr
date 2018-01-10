@@ -121,7 +121,7 @@ void lovrCanvasBind(Canvas* canvas) {
     float fov = 2.f * atan(1.f / b);
     float newProjection[16];
     mat4_perspective(newProjection, near, far, fov, aspect);
-    lovrGraphicsSetProjection(newProjection);
+    lovrGraphicsSetProjection(projection);
   }
 }
 
