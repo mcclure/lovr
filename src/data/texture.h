@@ -13,6 +13,12 @@
 #endif
 
 typedef enum {
+  SAMPLE_FILTER_WEIGHTED_AVERAGE,
+  SAMPLE_FILTER_MIN,
+  SAMPLE_FILTER_MAX,
+} SampleFilter;
+
+typedef enum {
   FORMAT_RGB,
   FORMAT_RGBA,
   FORMAT_RGBA16F,

@@ -42,6 +42,7 @@ typedef struct {
   int height;
   GLuint id;
   TextureFilter filter;
+  SampleFilter sampleFilter;
   TextureWrap wrap;
   bool srgb;
 } Texture;

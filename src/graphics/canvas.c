@@ -140,6 +140,28 @@ void lovrCanvasResolveMSAA(Canvas* canvas) {
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 }
 
+SampleFilter lovrCanvasGetSampleFilter(Canvas *canvas) {
+  return canvas->texture.sampleFilter;
+}
+
+#define GL_TEXTURE_REDUCTION_MODE_EXT 0x9366
+#define GL_WEIGHTED_AVERAGE_EXT 0x9367
+
+void lovrCanvasSetSampleFilter(Canvas *canvas, SampleFilter sampleFilter) {
+  GLint result;
+
+  switch (sampleFilter) {
+    case SAMPLE_FILTER_MIN: result = GL_MIN; break;
+    case SAMPLE_FILTER_MAX: result = GL_MAX; break;
+    default: result = GL_WEIGHTED_AVERAGE_EXT; break;
+  }
+  while((glGetError()) != GL_NO_ERROR);
+  lovrGraphicsBindTexture(&canvas->texture, canvas->texture.type, 0);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_REDUCTION_MODE_EXT, result);
+  printf("ID %d SET %d ERROR %d\n", (int)canvas->texture.id, (int)result, (int)glGetError());
+  canvas->texture.sampleFilter = sampleFilter;
+}
+
 TextureFormat lovrCanvasGetFormat(Canvas* canvas) {
   return canvas->texture.slices[0]->format;
 }

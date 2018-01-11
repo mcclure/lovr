@@ -132,6 +132,7 @@ Texture* lovrTextureCreate(TextureType type, TextureData* slices[6], int sliceCo
   glGenTextures(1, &texture->id);
   lovrGraphicsBindTexture(texture, type, 0);
   lovrTextureUpload(texture);
+  texture->sampleFilter = SAMPLE_FILTER_WEIGHTED_AVERAGE;
   lovrTextureSetFilter(texture, lovrGraphicsGetDefaultFilter());
   WrapMode wrapMode = (type == TEXTURE_CUBE) ? WRAP_CLAMP : WRAP_REPEAT;
   lovrTextureSetWrap(texture, (TextureWrap) { .s = wrapMode, .t = wrapMode, .r = wrapMode });
