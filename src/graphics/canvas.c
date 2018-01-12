@@ -158,7 +158,7 @@ void lovrCanvasSetSampleFilter(Canvas *canvas, SampleFilter sampleFilter) {
   while((glGetError()) != GL_NO_ERROR);
   lovrGraphicsBindTexture(&canvas->texture, canvas->texture.type, 0);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_REDUCTION_MODE_EXT, result);
-  printf("ID %d SET %d ERROR %d\n", (int)canvas->texture.id, (int)result, (int)glGetError());
+  //printf("ID %d SET %d ERROR %d mipmaps? %s %s\n", (int)canvas->texture.id, (int)result, (int)glGetError(), lovrTextureFormatIsCompressed(canvas->texture.slices[0]->format)?"Y":"N", canvas->texture.slices[0]->mipmaps.generated?"Y":"N");
   canvas->texture.sampleFilter = sampleFilter;
 }
 
