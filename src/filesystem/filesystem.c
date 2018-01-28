@@ -21,9 +21,12 @@
 
 static FilesystemState state;
 
+bool filesystemAlreadyInit = false;
+
 void lovrFilesystemInit(const char* arg0, const char* arg1) {
-  if (lovrReloadPending) // Do not change settings during a reload, and don't try to initialize GLFW twice
+  if (filesystemAlreadyInit) // Do not change settings during a reload, and don't try to initialize PhysFS twice
     return;
+  filesystemAlreadyInit = true;
 
   if (!PHYSFS_init(arg0)) {
     lovrThrow("Could not initialize filesystem: %s", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));

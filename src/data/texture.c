@@ -96,12 +96,12 @@ static int parseDDS(uint8_t* data, size_t size, TextureData* textureData) {
 
     // Overflow check
     if (mipmapSize == 0 || (offset + mipmapSize) > size) {
-      vec_deinit(&textureData->mipmaps.list);
+      vec_deinit(&textureData->mipmaps);
       return 1;
     }
 
     Mipmap mipmap = { .width = width, .height = height, .data = &data[offset], .size = mipmapSize };
-    vec_push(&textureData->mipmaps.list, mipmap);
+    vec_push(&textureData->mipmaps, mipmap);
     offset += mipmapSize;
     width = MAX(width >> 1, 1);
     height = MAX(height >> 1, 1);
@@ -113,7 +113,7 @@ static int parseDDS(uint8_t* data, size_t size, TextureData* textureData) {
 }
 
 TextureData* lovrTextureDataGetBlank(int width, int height, uint8_t value, TextureFormat format) {
-  TextureData* textureData = malloc(sizeof(TextureData));
+  TextureData* textureData = lovrAlloc(sizeof(TextureData), lovrTextureDataDestroy);
   if (!textureData) return NULL;
 
   size_t pixelSize = 0;
@@ -132,13 +132,13 @@ TextureData* lovrTextureDataGetBlank(int width, int height, uint8_t value, Textu
   textureData->format = format;
   textureData->data = memset(malloc(size), value, size);
   textureData->blob = NULL;
-  vec_init(&textureData->mipmaps.list);
-  textureData->mipmaps.generated = false;
+  vec_init(&textureData->mipmaps);
+  textureData->generateMipmaps = false;
   return textureData;
 }
 
 TextureData* lovrTextureDataGetEmpty(int width, int height, TextureFormat format) {
-  TextureData* textureData = malloc(sizeof(TextureData));
+  TextureData* textureData = lovrAlloc(sizeof(TextureData), lovrTextureDataDestroy);
   if (!textureData) return NULL;
 
   textureData->width = width;
@@ -146,16 +146,16 @@ TextureData* lovrTextureDataGetEmpty(int width, int height, TextureFormat format
   textureData->format = format;
   textureData->data = NULL;
   textureData->blob = NULL;
-  vec_init(&textureData->mipmaps.list);
-  textureData->mipmaps.generated = false;
+  vec_init(&textureData->mipmaps);
+  textureData->generateMipmaps = false;
   return textureData;
 }
 
 TextureData* lovrTextureDataFromBlob(Blob* blob) {
-  TextureData* textureData = malloc(sizeof(TextureData));
+  TextureData* textureData = lovrAlloc(sizeof(TextureData), lovrTextureDataDestroy);
   if (!textureData) return NULL;
 
-  vec_init(&textureData->mipmaps.list);
+  vec_init(&textureData->mipmaps);
 
   if (!parseDDS(blob->data, blob->size, textureData)) {
     textureData->blob = blob;
@@ -167,7 +167,7 @@ TextureData* lovrTextureDataFromBlob(Blob* blob) {
   textureData->format = FORMAT_RGBA;
   textureData->data = stbi_load_from_memory(blob->data, blob->size, &textureData->width, &textureData->height, NULL, 4);
   textureData->blob = NULL;
-  textureData->mipmaps.generated = true;
+  textureData->generateMipmaps = true;
 
   if (!textureData->data) {
     lovrThrow("Could not load texture data from '%s'", blob->name);
@@ -178,11 +178,12 @@ TextureData* lovrTextureDataFromBlob(Blob* blob) {
   return textureData;
 }
 
-void lovrTextureDataDestroy(TextureData* textureData) {
+void lovrTextureDataDestroy(const Ref* ref) {
+  TextureData* textureData = containerof(ref, TextureData);
   if (textureData->blob) {
     lovrRelease(&textureData->blob->ref);
   }
-  vec_deinit(&textureData->mipmaps.list);
+  vec_deinit(&textureData->mipmaps);
   free(textureData->data);
   free(textureData);
 }

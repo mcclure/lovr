@@ -1,4 +1,4 @@
-#include "data/source.h"
+#include "data/audioStream.h"
 #include "util.h"
 #include <AL/al.h>
 #include <AL/alc.h>
@@ -15,16 +15,16 @@ typedef enum {
 
 typedef struct {
   Ref ref;
-  SourceData* sourceData;
+  AudioStream* stream;
   ALuint id;
   ALuint buffers[SOURCE_BUFFERS];
   bool isLooping;
 } Source;
 
-Source* lovrSourceCreate(SourceData* sourceData);
+Source* lovrSourceCreate(AudioStream* stream);
 void lovrSourceDestroy(const Ref* ref);
 int lovrSourceGetBitDepth(Source* source);
-int lovrSourceGetChannels(Source* source);
+int lovrSourceGetChannelCount(Source* source);
 void lovrSourceGetCone(Source* source, float* innerAngle, float* outerAngle, float* outerGain);
 void lovrSourceGetDirection(Source* source, float* x, float* y, float* z);
 int lovrSourceGetDuration(Source* source);

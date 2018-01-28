@@ -15,6 +15,8 @@ typedef struct {
   bool isFused;
 } FilesystemState;
 
+extern bool lovrFilesystemReloadEnable;
+
 void lovrFilesystemInit(const char* arg0, const char* arg1);
 void lovrFilesystemDestroy();
 int lovrFilesystemCreateDirectory(const char* path);

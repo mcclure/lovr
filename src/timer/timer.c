@@ -5,13 +5,10 @@
 static TimerState timerState;
 
 void lovrTimerInit() {
-  glfwSetTime(0);
   timerState.tickIndex = 0;
   for (int i = 0; i < TICK_SAMPLES; i++) {
     timerState.tickBuffer[i] = 0.;
   }
-
-  lovrTimerStep();
 }
 
 double lovrTimerGetDelta() {

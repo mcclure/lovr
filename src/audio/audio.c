@@ -6,13 +6,11 @@
 #include "lovr.h"
 
 static AudioState state;
-static bool audioInitAlready = false;
+static bool audioAlreadyInit = false;
 
 void lovrAudioInit() {
-  if (lovrReloadPending) { // During a reload, bring down the audio device then recreate it
+  if (audioAlreadyInit) { // During a reload, bring down the audio device then recreate it
     lovrAudioDestroy();
-  } else {
-    lovrAssert(!audioInitAlready, "Audio device is already created");
   }
 
   ALCdevice* device = alcOpenDevice(NULL);
@@ -39,9 +37,9 @@ void lovrAudioInit() {
   vec3_set(state.position, 0, 0, 0);
   vec3_set(state.velocity, 0, 0, 0);
 
-  if (!lovrReloadPending) {
+  if (!audioAlreadyInit) {
     atexit(lovrAudioDestroy);
-    audioInitAlready = true;
+    audioAlreadyInit = true;
   }
 }
 

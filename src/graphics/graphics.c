@@ -1,6 +1,6 @@
 #include "graphics/graphics.h"
 #include "data/texture.h"
-#include "data/font.h"
+#include "data/rasterizer.h"
 #include "resources/shaders.h"
 #include "event/event.h"
 #include "filesystem/filesystem.h"
@@ -165,12 +165,15 @@ void lovrGraphicsPrepare(Material* material, float* pose) {
   lovrShaderBind(shader);
 }
 
+static bool graphicsAlreadyInit = false;
+
 void lovrGraphicsCreateWindow(int w, int h, bool fullscreen, int msaa, const char* title, const char* icon) {
-  if (lovrReloadPending) {
+  if (graphicsAlreadyInit) {
     lovrGraphicsReset();
     return;
   } else {
     lovrAssert(!state.window, "Window is already created");
+    graphicsAlreadyInit = true;
   }
 
 #ifdef EMSCRIPTEN
@@ -370,8 +373,8 @@ void lovrGraphicsSetDepthTest(CompareMode depthTest) {
 Font* lovrGraphicsGetFont() {
   if (!state.font) {
     if (!state.defaultFont) {
-      FontData* fontData = lovrFontDataCreate(NULL, 32);
-      state.defaultFont = lovrFontCreate(fontData);
+      Rasterizer* rasterizer = lovrRasterizerCreate(NULL, 32);
+      state.defaultFont = lovrFontCreate(rasterizer);
     }
 
     lovrGraphicsSetFont(state.defaultFont);

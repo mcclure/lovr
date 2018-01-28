@@ -6,6 +6,8 @@
 #include "lovr.h"
 #include <physfs.h>
 
+bool lovrFilesystemReloadEnable;
+
 struct LovrLiveReloadRecord;
 typedef struct LovrLiveReloadRecord {
   char *path;
@@ -15,7 +17,7 @@ typedef struct LovrLiveReloadRecord {
 static LovrLiveReloadRecord *liveRecordRoot = NULL;
 
 static void lovrReloadAddWatch(const char *physPath) {
-  if (!lovrReloadEnable)
+  if (!lovrFilesystemReloadEnable)
     return;
   if (PHYSFS_getRealDir(physPath)) { // Disregard anything in a zip file, etc
     LovrLiveReloadRecord *newRecord = malloc(sizeof(LovrLiveReloadRecord));
@@ -32,21 +34,6 @@ bool lovrReloadCheck() {
       return true;
   }
   return false;
-}
-
-void lovrReloadReset() {
-  lovrAssert(lovrReloadEnable, "Called lovr.reloadReset, but live reloading is not enabled.");
-
-  LovrLiveReloadRecord *i = liveRecordRoot;
-  while (i) {
-    LovrLiveReloadRecord *current = i;
-    i = current->next;
-    free(current->path);
-    free(current);
-  }
-  liveRecordRoot = NULL;
-  lovrReloadPending = true;
-  printf("Reloading files and restarting.\n");
 }
 
 // Returns a Blob, leaving stack unchanged.  The Blob must be released when finished.
@@ -108,7 +95,7 @@ static int filesystemLoader(lua_State* L) {
       strncat(filename, requirePath[i] + index + 1, strlen(requirePath[i]) - index);
 
       if (lovrFilesystemIsFile(filename)) {
-        if (lovrReloadEnable) {
+        if (lovrFilesystemReloadEnable) {
           lovrReloadAddWatch(filename);
         }
 
@@ -123,6 +110,17 @@ static int filesystemLoader(lua_State* L) {
 }
 
 int l_lovrFilesystemInit(lua_State* L) {
+  if (liveRecordRoot) {
+    LovrLiveReloadRecord *i = liveRecordRoot;
+    while (i) {
+      LovrLiveReloadRecord *current = i;
+      i = current->next;
+      free(current->path);
+      free(current);
+    }
+    liveRecordRoot = NULL;
+  }
+    
   lua_newtable(L);
   luaL_register(L, NULL, lovrFilesystem);
   luax_registertype(L, "Blob", lovrBlob);
@@ -343,18 +341,13 @@ int l_lovrFilesystemReloadAddWatch(lua_State* L) {
 }
 
 int l_lovrFilesystemReloadEnabled(lua_State* L) {
-  lua_pushboolean(L, lovrReloadEnable);
+  lua_pushboolean(L, lovrFilesystemReloadEnable);
   return 1;
 }
 
 int l_lovrFilesystemReloadCheck(lua_State* L) {
   lua_pushboolean(L, lovrReloadCheck());
   return 1;
-}
-
-int l_lovrFilesystemReloadReset(lua_State* L) {
-  lovrReloadReset();
-  return 0;
 }
 
 int l_lovrFilesystemRemove(lua_State* L) {
@@ -410,7 +403,6 @@ const luaL_Reg lovrFilesystem[] = {
   { "reloadAddWatch", l_lovrFilesystemReloadAddWatch },
   { "reloadEnabled", l_lovrFilesystemReloadEnabled },
   { "reloadCheck", l_lovrFilesystemReloadCheck },
-  { "reloadReset", l_lovrFilesystemReloadReset },
   { "remove", l_lovrFilesystemRemove },
   { "setIdentity", l_lovrFilesystemSetIdentity },
   { "write", l_lovrFilesystemWrite },

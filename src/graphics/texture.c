@@ -78,7 +78,7 @@ static void lovrTextureUpload(Texture* texture) {
 
     if (lovrTextureFormatIsCompressed(textureData->format)) {
       Mipmap m; int i;
-      vec_foreach(&textureData->mipmaps.list, m, i) {
+      vec_foreach(&textureData->mipmaps, m, i) {
         glCompressedTexImage2D(binding, i, glInternalFormat, m.width, m.height, 0, m.size, m.data);
       }
     } else {
@@ -91,7 +91,7 @@ static void lovrTextureUpload(Texture* texture) {
         glTexSubImage2D(binding, 0, 0, 0, w, h, glFormat, GL_UNSIGNED_BYTE, textureData->data);
       }
 
-      if (textureData->mipmaps.generated) {
+      if (textureData->generateMipmaps) {
         glGenerateMipmap(texture->type);
       }
     }
@@ -137,13 +137,17 @@ Texture* lovrTextureCreate(TextureType type, TextureData* slices[6], int sliceCo
   WrapMode wrapMode = (type == TEXTURE_CUBE) ? WRAP_CLAMP : WRAP_REPEAT;
   lovrTextureSetWrap(texture, (TextureWrap) { .s = wrapMode, .t = wrapMode, .r = wrapMode });
 
+  for (int i = 0; i < sliceCount; i++) {
+    lovrRetain(&slices[i]->ref);
+  }
+
   return texture;
 }
 
 void lovrTextureDestroy(const Ref* ref) {
   Texture* texture = containerof(ref, Texture);
   for (int i = 0; i < texture->sliceCount; i++) {
-    lovrTextureDataDestroy(texture->slices[i]);
+    lovrRelease(&texture->slices[i]->ref);
   }
   glDeleteTextures(1, &texture->id);
   free(texture);
@@ -154,40 +158,40 @@ TextureFilter lovrTextureGetFilter(Texture* texture) {
 }
 
 void lovrTextureSetFilter(Texture* texture, TextureFilter filter) {
-  bool hasMipmaps = lovrTextureFormatIsCompressed(texture->slices[0]->format) || texture->slices[0]->mipmaps.generated;
+  bool hasMipmaps = lovrTextureFormatIsCompressed(texture->slices[0]->format) || texture->slices[0]->generateMipmaps;
   float anisotropy = filter.mode == FILTER_ANISOTROPIC ? MAX(filter.anisotropy, 1.) : 1.;
   lovrGraphicsBindTexture(texture, texture->type, 0);
   texture->filter = filter;
 
   switch (filter.mode) {
     case FILTER_NEAREST:
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+      glTexParameteri(texture->type, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+      glTexParameteri(texture->type, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
       break;
 
     case FILTER_BILINEAR:
       if (hasMipmaps) {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(texture->type, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+        glTexParameteri(texture->type, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
       } else {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(texture->type, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(texture->type, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
       }
       break;
 
     case FILTER_TRILINEAR:
     case FILTER_ANISOTROPIC:
       if (hasMipmaps) {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(texture->type, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(texture->type, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
       } else {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(texture->type, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(texture->type, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
       }
       break;
   }
 
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, anisotropy);
+  glTexParameteri(texture->type, GL_TEXTURE_MAX_ANISOTROPY_EXT, anisotropy);
 }
 
 TextureWrap lovrTextureGetWrap(Texture* texture) {

@@ -215,6 +215,7 @@ endif()
 # LÖVR
 set(LOVR_SRC
   src/api/audio.c
+  src/api/data.c
   src/api/event.c
   src/api/filesystem.c
   src/api/graphics.c
@@ -223,6 +224,7 @@ set(LOVR_SRC
   src/api/physics.c
   src/api/timer.c
   src/api/types/animator.c
+  src/api/types/audioStream.c
   src/api/types/blob.c
   src/api/types/canvas.c
   src/api/types/collider.c
@@ -232,20 +234,24 @@ set(LOVR_SRC
   src/api/types/material.c
   src/api/types/mesh.c
   src/api/types/model.c
+  src/api/types/modelData.c
   src/api/types/randomGenerator.c
+  src/api/types/rasterizer.c
   src/api/types/shader.c
   src/api/types/shapes.c
   src/api/types/source.c
   src/api/types/texture.c
+  src/api/types/textureData.c
   src/api/types/transform.c
   src/api/types/world.c
   src/audio/audio.c
   src/audio/source.c
   src/data/animation.c
-  src/data/font.c
+  src/data/audioStream.c
+  src/data/data.c
   src/data/material.c
   src/data/model.c
-  src/data/source.c
+  src/data/rasterizer.c
   src/data/texture.c
   src/event/event.c
   src/filesystem/blob.c

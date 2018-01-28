@@ -142,6 +142,14 @@ static TrackedDevicePose_t getPose(unsigned int deviceIndex) {
   return poses[deviceIndex];
 }
 
+static void initializeCanvas() {
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  int msaa = 0;
+  glGetIntegerv(GL_SAMPLES, &msaa);
+  state.system->GetRecommendedRenderTargetSize(&state.renderWidth, &state.renderHeight);
+  state.canvas = lovrCanvasCreate(state.renderWidth, state.renderHeight, FORMAT_RGB, CANVAS_3D, msaa, true, true);
+}
+
 static void openvrInit() {
   state.isInitialized = false;
   state.isRendering = false;
@@ -320,6 +328,7 @@ static void openvrGetDisplayDimensions(int* width, int* height) {
   if (!state.isInitialized) {
     *width = *height = 0;
   } else {
+    initializeCanvas();
     *width = state.renderWidth;
     *height = state.renderHeight;
   }
@@ -352,20 +361,6 @@ static float openvrGetBoundsDepth() {
   float depth;
   state.chaperone->GetPlayAreaSize(NULL, &depth);
   return depth;
-}
-
-static void openvrGetBoundsGeometry(float* geometry) {
-  if (!state.isInitialized) {
-    memset(geometry, 0, 12 * sizeof(float));
-  } else {
-    struct HmdQuad_t quad;
-    state.chaperone->GetPlayAreaRect(&quad);
-    for (int i = 0; i < 4; i++) {
-      geometry[3 * i + 0] = quad.vCorners[i].v[0];
-      geometry[3 * i + 1] = quad.vCorners[i].v[1];
-      geometry[3 * i + 2] = quad.vCorners[i].v[2];
-    }
-  }
 }
 
 static void openvrGetPose(float* x, float* y, float* z, float* angle, float* ax, float* ay, float* az) {
@@ -679,9 +674,11 @@ static ModelData* openvrControllerNewModelData(Controller* controller) {
 
   modelData->nodes = malloc(1 * sizeof(ModelNode));
   modelData->primitives = malloc(1 * sizeof(ModelPrimitive));
-  modelData->materials = malloc(1 * sizeof(MaterialData));
+  modelData->materials = malloc(1 * sizeof(MaterialData*));
+  modelData->animationData = NULL;
 
   // Geometry
+  map_init(&modelData->nodeMap);
   ModelNode* root = &modelData->nodes[0];
   root->parent = -1;
   mat4_identity(root->transform);
@@ -691,6 +688,7 @@ static ModelData* openvrControllerNewModelData(Controller* controller) {
   modelData->primitives[0].material = 0;
   modelData->primitives[0].drawStart = 0;
   modelData->primitives[0].drawCount = modelData->indexCount;
+  map_init(&modelData->primitives[0].boneMap);
 
   // Material
   RenderModel_TextureMap_t* vrTexture = state.deviceTextures[id];
@@ -706,8 +704,9 @@ static ModelData* openvrControllerNewModelData(Controller* controller) {
   textureData->height = height;
   textureData->format = FORMAT_RGBA;
   textureData->data = memcpy(malloc(size), vrTexture->rubTextureMapData, size);
-  textureData->mipmaps.generated = 1;
   textureData->blob = NULL;
+  textureData->generateMipmaps = true;
+  vec_init(&textureData->mipmaps);
 
   modelData->materials[0] = lovrMaterialDataCreateEmpty();
   modelData->materials[0]->textures[TEXTURE_DIFFUSE] = textureData;
@@ -726,11 +725,7 @@ static void openvrRenderTo(headsetRenderCallback callback, void* userdata) {
   lovrGraphicsPushView();
 
   if (!state.canvas) {
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    int msaa = 0;
-    glGetIntegerv(GL_SAMPLES, &msaa);
-    state.system->GetRecommendedRenderTargetSize(&state.renderWidth, &state.renderHeight);
-    state.canvas = lovrCanvasCreate(state.renderWidth, state.renderHeight, FORMAT_RGB, CANVAS_3D, msaa, true, true);
+    initializeCanvas();
   }
 
   float head[16], transform[16], projection[16];
@@ -825,7 +820,6 @@ HeadsetInterface lovrHeadsetOpenVRDriver = {
   openvrSetClipDistance,
   openvrGetBoundsWidth,
   openvrGetBoundsDepth,
-  openvrGetBoundsGeometry,
   openvrGetPose,
   openvrGetEyePose,
   openvrGetVelocity,

@@ -6,10 +6,8 @@
 #include "lib/lua-cjson/lua_cjson.h"
 #include "lib/lua-enet/enet.h"
 #include "lib/glfw.h"
+#include "filesystem/filesystem.h"
 #include <stdlib.h>
-
-bool lovrReloadEnable = false;
-bool lovrReloadPending = false;
 
 static int hasErrored = 0;
 
@@ -66,6 +64,8 @@ static int lovrSetConf(lua_State* L) {
   return 0;
 }
 
+static bool glfwAlreadyInit = false;
+
 void lovrInit(lua_State* L, int argc, char** argv) {
   bool checkingArgs = true;
   while (checkingArgs) {
@@ -75,20 +75,24 @@ void lovrInit(lua_State* L, int argc, char** argv) {
       exit(0);
     }
 
-    if (!lovrReloadPending && argc > 1 && strcmp(argv[1], "--live") == 0) {
-      printf("Running LOVR in live-reload mode: lua files on disk will be watched.\n");
-      lovrReloadEnable = true;
+    if (argc > 1 && strcmp(argv[1], "--live") == 0) {
+      if (!lovrFilesystemReloadEnable) {
+        printf("Running LOVR in live-reload mode: lua files on disk will be watched.\n");
+        lovrFilesystemReloadEnable = true;
+      }
       argc--;
       argv++;
       checkingArgs = true;
     }
   }
 
+  glfwSetTime(0);
   glfwSetErrorCallback(onGlfwError);
 
-  if (!lovrReloadPending && !glfwInit()) {
+  if (!glfwAlreadyInit && !glfwInit()) {
     lovrThrow("Error initializing glfw");
   }
+  glfwAlreadyInit = true;
 
   // arg global
   lua_newtable(L);
@@ -120,6 +124,7 @@ void lovrInit(lua_State* L, int argc, char** argv) {
 
   // Preload modules
   luax_preloadmodule(L, "lovr.audio", l_lovrAudioInit);
+  luax_preloadmodule(L, "lovr.data", l_lovrDataInit);
   luax_preloadmodule(L, "lovr.event", l_lovrEventInit);
   luax_preloadmodule(L, "lovr.filesystem", l_lovrFilesystemInit);
   luax_preloadmodule(L, "lovr.graphics", l_lovrGraphicsInit);
@@ -155,8 +160,7 @@ static void emscriptenLoop(void* arg) {
   lua_call(L, 0, 0);
 }
 
-void lovrRun(lua_State* L) {
-  glfwSetTime(0);
+bool lovrRun(lua_State* L) {
 
   // lovr.load
   lua_getglobal(L, "lovr");
@@ -173,12 +177,11 @@ void lovrRun(lua_State* L) {
   }
 
   emscripten_set_main_loop_arg(emscriptenLoop, (void*) L, 0, 1);
+  return false;
 }
 #else
-void lovrRun(lua_State* L) {
-  glfwSetTime(0);
+bool lovrRun(lua_State* L) {
   lovrCatch = malloc(sizeof(jmp_buf));
-  lovrReloadPending = false; // TODO: Set after notifying code of reload
 
   // Global error handler
   if (setjmp(*lovrCatch)) {
@@ -192,7 +195,7 @@ void lovrRun(lua_State* L) {
     lua_pushstring(L, lovrErrorMessage);
     lua_pcall(L, 1, 1, 0);
     handleError(L, lua_tostring(L, -1));
-    return;
+    return false;
   }
 
   // lovr.run()
@@ -204,11 +207,21 @@ void lovrRun(lua_State* L) {
   }
 
   // Exit with return value from lovr.run
-  int exitCode = luaL_optint(L, -1, 0);
-  lua_pop(L, 2);
+  int exitCode = 0;
+  int returnType = lua_type(L, -1);
+  bool reloading = false;
+  if (returnType == LUA_TSTRING && 0 == strcmp("restart", lua_tostring(L, -1))) {
+    reloading = true; // Treat "restart" as special
+  } else if (returnType == LUA_TNUMBER || lua_isnoneornil(L, -1)) {
+    exitCode = luaL_optint(L, -1, 0);
+  } else {
+    luaL_argerror (L, -1, "number or the exact string 'restart' expected");
+  }
+
   free(lovrCatch);
   lovrCatch = NULL;
-  if (!lovrReloadPending)
+  if (!reloading)
     lovrDestroy(exitCode);
+  return reloading;
 }
 #endif

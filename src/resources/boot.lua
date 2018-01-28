@@ -1,6 +1,7 @@
 local conf = {
   modules = {
     audio = true,
+    data = true,
     event = true,
     graphics = true,
     headset = true,
@@ -121,17 +122,19 @@ if not lovr.filesystem.getSource() or not runnable then
   lovr.controllerremoved = refreshControllers
 end
 
-local success, err = pcall(require, 'conf')
-local conferr
-if lovr.conf then
-  success, conferr = pcall(lovr.conf, conf)
+local confOk, confError
+if lovr.filesystem.isFile('conf.lua') then
+  confOk, confError = pcall(require, 'conf')
+  if lovr.conf then
+    confOk, confError = pcall(lovr.conf, conf)
+  end
 end
 
 lovr._setConf(conf)
 
 lovr.filesystem.setIdentity(conf.identity)
 
-local modules = { 'audio', 'event', 'graphics', 'headset', 'math', 'physics', 'timer' }
+local modules = { 'audio', 'data', 'event', 'graphics', 'headset', 'math', 'physics', 'timer' }
 for _, module in ipairs(modules) do
   if conf.modules[module] then
     lovr[module] = require('lovr.' .. module)
@@ -139,8 +142,8 @@ for _, module in ipairs(modules) do
 end
 
 -- Error after window is created
-if conferr then
-  error(conferr)
+if confError then
+  error(confError)
 end
 
 lovr.handlers = setmetatable({
@@ -166,11 +169,11 @@ lovr.handlers = setmetatable({
   end
 })
 
-local function headsetRenderCallback()
+local function headsetRenderCallback(eye)
   if lovr.headset.getOriginType() == 'head' then
     applyHeadsetOffset()
   end
-  lovr.draw()
+  lovr.draw(eye)
 end
 
 local reloadLast = 0
@@ -179,7 +182,7 @@ local function reloadHandle(dt)
   reloadLast = reloadLast + dt
   if not reloadLastUpdated or math.floor(reloadLast) > reloadLastUpdated then
     if lovr.filesystem.reloadCheck() then
-      lovr.filesystem.reloadReset()
+      print("Source files changed, restarting")
       return true
     end
     reloadLastUpdated = reloadLast
@@ -222,13 +225,14 @@ function lovr.step()
   end
   if lovr.filesystem.reloadEnabled() then
     if reloadHandle(dt) then
-      return 0
+      return "restart"
     end
   end
   lovr.timer.sleep(.001)
 end
 
 function lovr.run()
+  lovr.timer.step()
   if lovr.load then lovr.load() end
   while true do
     local exit = lovr.step()

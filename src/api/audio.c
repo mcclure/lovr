@@ -1,7 +1,7 @@
 #include "api.h"
 #include "audio/audio.h"
 #include "audio/source.h"
-#include "data/source.h"
+#include "data/audioStream.h"
 
 map_int_t TimeUnits;
 
@@ -62,12 +62,19 @@ int l_lovrAudioIsSpatialized(lua_State* L) {
 }
 
 int l_lovrAudioNewSource(lua_State* L) {
-  Blob* blob = luax_readblob(L, 1, "Source");
-  SourceData* sourceData = lovrSourceDataCreate(blob);
-  Source* source = lovrSourceCreate(sourceData);
+  void** type;
+  AudioStream* stream;
+  if ((type = luax_totype(L, 1, AudioStream)) != NULL) {
+    stream = *type;
+  } else {
+    Blob* blob = luax_readblob(L, 1, "Source");
+    stream = lovrAudioStreamCreate(blob, 4096);
+    lovrRelease(&blob->ref);
+  }
+
+  Source* source = lovrSourceCreate(stream);
   luax_pushtype(L, Source, source);
   lovrRelease(&source->ref);
-  lovrRelease(&blob->ref);
   return 1;
 }
 

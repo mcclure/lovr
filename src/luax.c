@@ -1,6 +1,5 @@
 #include "luax.h"
 #include "util.h"
-#include "lovr.h"
 #include <stdlib.h>
 
 static int luax_pushobjectname(lua_State* L) {
@@ -91,6 +90,19 @@ int luax_releasetype(lua_State* L) {
   return 0;
 }
 
+void* luax_testudata(lua_State* L, int index, const char* type) {
+  void* p = lua_touserdata(L, index);
+
+  if (!p || !lua_getmetatable(L, index)) {
+    return NULL;
+  }
+
+  luaL_getmetatable(L, type);
+  int equal = lua_rawequal(L, -1, -2);
+  lua_pop(L, 2);
+  return equal ? p : NULL;
+}
+
 // Find an object, pushing it onto the stack if it's found or leaving the stack unchanged otherwise.
 int luax_getobject(lua_State* L, void* object) {
   luax_pushobjectregistry(L);
@@ -122,8 +134,7 @@ void luax_pushconf(lua_State* L) {
 
 void luax_setconf(lua_State* L) {
   luax_pushconf(L);
-  if (!lovrReloadPending)
-    lovrAssert(lua_isnil(L, -1), "Unable to set lovr.conf multiple times");
+  lovrAssert(lua_isnil(L, -1), "Unable to set lovr.conf multiple times");
   lua_pop(L, 1);
   lua_setfield(L, LUA_REGISTRYINDEX, "_lovrconf");
 }
