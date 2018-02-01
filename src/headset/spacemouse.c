@@ -52,7 +52,7 @@ static void spacemouseMessageHandler(unsigned int connection, natural_t messageT
     }
 }
 
-void spacemouseInit() {
+static void spacemouseInit() {
   bzero(&spacemouseState, sizeof(spacemouseState)); // Rezero in case restart
 
   OSErr result = SetConnexionHandlers(spacemouseMessageHandler, spacemouseNullDeviceAddedHandler, spacemouseNullDeviceRemovedHandler, false);
@@ -67,12 +67,13 @@ void spacemouseInit() {
     SetConnexionClientButtonMask(connexionClient, kConnexionMaskAllButtons);
 }
 
-void spacemouseDestroy() {
+static void spacemouseDestroy() {
   UnregisterConnexionClient(connexionClient);
   connexionClient = 0;
 }
 
-float accel(float x, float p) {
+// Apply a curve to a [-1..1] value
+static float accel(float x, float p) {
   float ax = fabs(x);
   if (ax > deadZone) {
     bool neg = x < 0.0f;
@@ -83,7 +84,7 @@ float accel(float x, float p) {
   return x;
 }
 
-float spacemouseUpdate(float *v) { // v is an array of length 3
+static void spacemouseUpdate(float *v) { // v is an array of length 3
   v[0] += accel(spacemouseState.axis[SI_TX], 2) * 16.0f;
   v[1] += accel(-spacemouseState.axis[SI_TZ], 2) * 16.0f;
   v[2] += accel(spacemouseState.axis[SI_TY], 2) * 16.0f;
