@@ -344,3 +344,10 @@ if(WIN32)
   move_dll(${LOVR_OPENVR})
   move_dll(${LOVR_PHYSFS})
 endif()
+
+# SpaceMouse
+if(SPACEMOUSE_SUPPORT)
+  add_definitions(-DSPACEMOUSE_SUPPORT)
+  FIND_LIBRARY(SPACEMOUSE_LIBRARY 3DconnexionClient)
+  target_link_libraries(lovr ${SPACEMOUSE_LIBRARY})
+endif()
