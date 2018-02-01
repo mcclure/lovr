@@ -21,7 +21,7 @@ static void spacemouseNullDeviceAddedHandler  (unsigned int connection) {}
 static void spacemouseNullDeviceRemovedHandler  (unsigned int connection) {}
 static void spacemouseNullMessageHandler    (unsigned int connection, natural_t messageType, void *messageArgument);
 
-static float deadZone = 0.1;
+static float deadZone = 0.05;
 
 static float spacemouseToFloat(long v) {
   float scaled = (float)v * 32 / (-SHRT_MIN); // Normalize [-1024..1024] to [-1..1], which is the range on mac
@@ -72,13 +72,24 @@ void spacemouseDestroy() {
   connexionClient = 0;
 }
 
-float spacemouseUpdate(float *v) { // v is an array of length 3
-  v[0] += spacemouseState.axis[SI_TX] * 16.0f;
-  v[1] += -spacemouseState.axis[SI_TZ] * 16.0f;
-  v[2] += spacemouseState.axis[SI_TY] * 16.0f;
+float accel(float x, float p) {
+  float ax = fabs(x);
+  if (ax > deadZone) {
+    bool neg = x < 0.0f;
+    ax = (ax-deadZone)/(1.0f-deadZone);
+    ax = pow(ax, p);
+    return ax*(neg?-1.0f:1.0f);
+  }
+  return x;
+}
 
-  state.yaw += -spacemouseState.axis[SI_RZ] / 32.0f;
-  state.pitch += spacemouseState.axis[SI_RX] / 32.0f;
+float spacemouseUpdate(float *v) { // v is an array of length 3
+  v[0] += accel(spacemouseState.axis[SI_TX], 2) * 16.0f;
+  v[1] += accel(-spacemouseState.axis[SI_TZ], 2) * 16.0f;
+  v[2] += accel(spacemouseState.axis[SI_TY], 2) * 16.0f;
+
+  state.yaw += accel(-spacemouseState.axis[SI_RZ], 1.5) / 12.0f;
+  state.pitch += accel(spacemouseState.axis[SI_RX], 1.5) / 12.0f;
 
   if (state.pitch < -M_PI / 2.0) {
     state.pitch = -M_PI / 2.0;
