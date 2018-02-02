@@ -5,15 +5,16 @@
 #include "graphics/material.h"
 #include "graphics/mesh.h"
 #include "graphics/model.h"
-#include "data/material.h"
 #include "data/model.h"
 #include "data/rasterizer.h"
 #include "data/texture.h"
 #include "filesystem/filesystem.h"
+#include "lib/vertex.h"
 #include <math.h>
 #include <stdbool.h>
 
 map_int_t ArcModes;
+map_int_t AttributeTypes;
 map_int_t BlendAlphaModes;
 map_int_t BlendModes;
 map_int_t CanvasTypes;
@@ -24,7 +25,6 @@ map_int_t HorizontalAligns;
 map_int_t MaterialColors;
 map_int_t MaterialTextures;
 map_int_t MatrixTypes;
-map_int_t MeshAttributeTypes;
 map_int_t MeshDrawModes;
 map_int_t MeshUsages;
 map_int_t SampleFilters;
@@ -80,6 +80,33 @@ static void stencilCallback(void* userdata) {
   lua_call(L, 0, 0);
 }
 
+static void luax_checkvertexformat(lua_State* L, int index, VertexFormat* format) {
+  if (!lua_istable(L, index)) {
+    return;
+  }
+
+  int length = lua_objlen(L, index);
+  lovrAssert(length <= 8, "Only 8 vertex attributes are supported");
+  for (int i = 0; i < length; i++) {
+    lua_rawgeti(L, index, i + 1);
+
+    if (!lua_istable(L, -1) || lua_objlen(L, -1) != 3) {
+      luaL_error(L, "Expected vertex format specified as tables containing name, data type, and size");
+      return;
+    }
+
+    lua_rawgeti(L, -1, 1);
+    lua_rawgeti(L, -2, 2);
+    lua_rawgeti(L, -3, 3);
+
+    const char* name = lua_tostring(L, -3);
+    AttributeType* type = (AttributeType*) luax_checkenum(L, -2, &AttributeTypes, "mesh attribute type");
+    int count = lua_tointeger(L, -1);
+    vertexFormatAppend(format, name, *type, count);
+    lua_pop(L, 4);
+  }
+}
+
 static TextureData* luax_checktexturedata(lua_State* L, int index) {
   void** type;
   if ((type = luax_totype(L, index, TextureData)) != NULL) {
@@ -110,6 +137,11 @@ int l_lovrGraphicsInit(lua_State* L) {
   map_set(&ArcModes, "pie", ARC_MODE_PIE);
   map_set(&ArcModes, "open", ARC_MODE_OPEN);
   map_set(&ArcModes, "closed", ARC_MODE_CLOSED);
+
+  map_init(&AttributeTypes);
+  map_set(&AttributeTypes, "float", ATTR_FLOAT);
+  map_set(&AttributeTypes, "byte", ATTR_BYTE);
+  map_set(&AttributeTypes, "int", ATTR_INT);
 
   map_init(&BlendAlphaModes);
   map_set(&BlendAlphaModes, "alphamultiply", BLEND_ALPHA_MULTIPLY);
@@ -162,11 +194,6 @@ int l_lovrGraphicsInit(lua_State* L) {
   map_init(&MatrixTypes);
   map_set(&MatrixTypes, "model", MATRIX_MODEL);
   map_set(&MatrixTypes, "view", MATRIX_VIEW);
-
-  map_init(&MeshAttributeTypes);
-  map_set(&MeshAttributeTypes, "float", MESH_FLOAT);
-  map_set(&MeshAttributeTypes, "byte", MESH_BYTE);
-  map_set(&MeshAttributeTypes, "int", MESH_INT);
 
   map_init(&MeshDrawModes);
   map_set(&MeshDrawModes, "points", MESH_POINTS);
@@ -777,7 +804,7 @@ int l_lovrGraphicsStencil(lua_State* L) {
 
 int l_lovrGraphicsNewAnimator(lua_State* L) {
   Model* model = luax_checktype(L, 1, Model);
-  Animator* animator = lovrAnimatorCreate(model->modelData->animationData);
+  Animator* animator = lovrAnimatorCreate(model->modelData);
   luax_pushtype(L, Animator, animator);
   return 1;
 }
@@ -855,8 +882,7 @@ int l_lovrGraphicsNewFont(lua_State* L) {
 }
 
 int l_lovrGraphicsNewMaterial(lua_State* L) {
-  MaterialData* materialData = lovrMaterialDataCreateEmpty();
-  Material* material = lovrMaterialCreate(materialData, false);
+  Material* material = lovrMaterialCreate(false);
 
   int index = 1;
 
@@ -886,20 +912,20 @@ int l_lovrGraphicsNewMesh(lua_State* L) {
   int size;
   int dataIndex = 0;
   int drawModeIndex = 2;
-  MeshFormat format;
-  vec_init(&format);
+  VertexFormat format;
+  vertexFormatInit(&format);
 
   if (lua_isnumber(L, 1)) {
     size = lua_tointeger(L, 1);
   } else if (lua_istable(L, 1)) {
     if (lua_isnumber(L, 2)) {
       drawModeIndex++;
-      luax_checkmeshformat(L, 1, &format);
+      luax_checkvertexformat(L, 1, &format);
       size = lua_tointeger(L, 2);
       dataIndex = 0;
     } else if (lua_istable(L, 2)) {
       drawModeIndex++;
-      luax_checkmeshformat(L, 1, &format);
+      luax_checkvertexformat(L, 1, &format);
       size = lua_objlen(L, 2);
       dataIndex = 2;
     } else {
@@ -913,12 +939,12 @@ int l_lovrGraphicsNewMesh(lua_State* L) {
 
   MeshDrawMode* drawMode = (MeshDrawMode*) luax_optenum(L, drawModeIndex, "fan", &MeshDrawModes, "mesh draw mode");
   MeshUsage* usage = (MeshUsage*) luax_optenum(L, drawModeIndex + 1, "dynamic", &MeshUsages, "mesh usage");
-  Mesh* mesh = lovrMeshCreate(size, format.length ? &format : NULL, *drawMode, *usage);
+  Mesh* mesh = lovrMeshCreate(size, format.count > 0 ? &format : NULL, *drawMode, *usage);
 
   if (dataIndex) {
     int count = lua_objlen(L, dataIndex);
-    MeshFormat format = lovrMeshGetVertexFormat(mesh);
-    char* vertex = lovrMeshMap(mesh, 0, count, false, true);
+    format = *lovrMeshGetVertexFormat(mesh);
+    VertexData vertices = lovrMeshMap(mesh, 0, count, false, true);
 
     for (int i = 0; i < count; i++) {
       lua_rawgeti(L, dataIndex, i + 1);
@@ -927,25 +953,14 @@ int l_lovrGraphicsNewMesh(lua_State* L) {
       }
 
       int component = 0;
-      for (int j = 0; j < format.length; j++) {
-        MeshAttribute attribute = format.data[j];
+      for (int j = 0; j < format.count; j++) {
+        Attribute attribute = format.attributes[j];
         for (int k = 0; k < attribute.count; k++) {
           lua_rawgeti(L, -1, ++component);
           switch (attribute.type) {
-            case MESH_FLOAT:
-              *((float*) vertex) = luaL_optnumber(L, -1, 0.f);
-              vertex += sizeof(float);
-              break;
-
-            case MESH_BYTE:
-              *((uint8_t*) vertex) = luaL_optint(L, -1, 255);
-              vertex += sizeof(uint8_t);
-              break;
-
-            case MESH_INT:
-              *((int*) vertex) = luaL_optint(L, -1, 0);
-              vertex += sizeof(int);
-              break;
+            case ATTR_FLOAT: *vertices.floats++ = luaL_optnumber(L, -1, 0.f); break;
+            case ATTR_BYTE: *vertices.bytes++ = luaL_optint(L, -1, 255); break;
+            case ATTR_INT: *vertices.ints++ = luaL_optint(L, -1, 0); break;
           }
           lua_pop(L, 1);
         }
@@ -955,7 +970,6 @@ int l_lovrGraphicsNewMesh(lua_State* L) {
     }
   }
 
-  vec_deinit(&format);
   luax_pushtype(L, Mesh, mesh);
   lovrRelease(&mesh->ref);
   return 1;
@@ -979,8 +993,7 @@ int l_lovrGraphicsNewModel(lua_State* L) {
       Blob* blob = luax_readblob(L, 2, "Texture");
       TextureData* textureData = lovrTextureDataFromBlob(blob);
       Texture* texture = lovrTextureCreate(TEXTURE_2D, &textureData, 1, true);
-      MaterialData* materialData = lovrMaterialDataCreateEmpty();
-      Material* material = lovrMaterialCreate(materialData, false);
+      Material* material = lovrMaterialCreate(false);
       lovrMaterialSetTexture(material, TEXTURE_DIFFUSE, texture);
       lovrModelSetMaterial(model, material);
       lovrRelease(&blob->ref);

@@ -33,7 +33,7 @@ static void renderNode(Model* model, int nodeIndex, int instances) {
         }
       }
 
-      if (!model->material) {
+      if (!model->material && model->materials) {
         lovrMeshSetMaterial(model->mesh, model->materials[primitive->material]);
       }
 
@@ -59,45 +59,37 @@ Model* lovrModelCreate(ModelData* modelData) {
   model->animator = NULL;
   model->material = NULL;
 
-  MeshFormat format;
-  vec_init(&format);
-
-  MeshAttribute attribute = { .name = "lovrPosition", .type = MESH_FLOAT, .count = 3 };
-  vec_push(&format, attribute);
-
-  if (modelData->hasNormals) {
-    MeshAttribute attribute = { .name = "lovrNormal", .type = MESH_FLOAT, .count = 3 };
-    vec_push(&format, attribute);
-  }
-
-  if (modelData->hasUVs) {
-    MeshAttribute attribute = { .name = "lovrTexCoord", .type = MESH_FLOAT, .count = 2 };
-    vec_push(&format, attribute);
-  }
-
-  if (modelData->hasVertexColors) {
-    MeshAttribute attribute = { .name = "lovrVertexColor", .type = MESH_BYTE, .count = 4 };
-    vec_push(&format, attribute);
-  }
-
-  if (modelData->skinned) {
-    MeshAttribute bones = { .name = "lovrBones", .type = MESH_INT, .count = 4 };
-    vec_push(&format, bones);
-
-    MeshAttribute weights = { .name = "lovrBoneWeights", .type = MESH_FLOAT, .count = 4 };
-    vec_push(&format, weights);
-  }
-
-  model->mesh = lovrMeshCreate(modelData->vertexCount, &format, MESH_TRIANGLES, MESH_STATIC);
-  void* data = lovrMeshMap(model->mesh, 0, modelData->vertexCount, false, true);
-  memcpy(data, modelData->vertices.data, modelData->vertexCount * modelData->stride);
+  model->mesh = lovrMeshCreate(modelData->vertexCount, &modelData->format, MESH_TRIANGLES, MESH_STATIC);
+  VertexData vertices = lovrMeshMap(model->mesh, 0, modelData->vertexCount, false, true);
+  memcpy(vertices.data, modelData->vertices.data, modelData->vertexCount * modelData->format.stride);
   lovrMeshUnmap(model->mesh);
   lovrMeshSetVertexMap(model->mesh, modelData->indices.data, modelData->indexCount);
   lovrMeshSetRangeEnabled(model->mesh, true);
 
-  model->materials = malloc(modelData->materialCount * sizeof(Material*));
-  for (int i = 0; i < modelData->materialCount; i++) {
-    model->materials[i] = lovrMaterialCreate(modelData->materials[i], false);
+  if (modelData->textures.length > 0) {
+    model->textures = malloc(modelData->textures.length * sizeof(Texture*));
+    for (int i = 0; i < modelData->textures.length; i++) {
+      if (modelData->textures.data[i]) {
+        model->textures[i] = lovrTextureCreate(TEXTURE_2D, (TextureData**) &modelData->textures.data[i], 1, true);
+      } else {
+        model->textures[i] = NULL;
+      }
+    }
+  } else {
+    model->textures = NULL;
+  }
+
+  if (modelData->materialCount > 0) {
+    model->materials = malloc(modelData->materialCount * sizeof(Material*));
+    for (int i = 0; i < modelData->materialCount; i++) {
+      ModelMaterial* materialData = &modelData->materials[i];
+      Material* material = lovrMaterialCreate(false);
+      lovrMaterialSetColor(material, COLOR_DIFFUSE, materialData->diffuseColor);
+      lovrMaterialSetTexture(material, TEXTURE_DIFFUSE, model->textures[materialData->diffuseTexture]);
+      model->materials[i] = material;
+    }
+  } else {
+    model->materials = NULL;
   }
 
   for (int i = 0; i < MAX_BONES; i++) {
@@ -117,12 +109,16 @@ Model* lovrModelCreate(ModelData* modelData) {
     }
   }
 
-  vec_deinit(&format);
   return model;
 }
 
 void lovrModelDestroy(const Ref* ref) {
   Model* model = containerof(ref, Model);
+  for (int i = 0; i < model->modelData->textures.length; i++) {
+    if (model->textures[i]) {
+      lovrRelease(&model->textures[i]->ref);
+    }
+  }
   for (int i = 0; i < model->modelData->materialCount; i++) {
     lovrRelease(&model->materials[i]->ref);
   }
@@ -132,6 +128,7 @@ void lovrModelDestroy(const Ref* ref) {
   if (model->material) {
     lovrRelease(&model->material->ref);
   }
+  free(model->textures);
   free(model->materials);
   lovrRelease(&model->modelData->ref);
   lovrRelease(&model->mesh->ref);

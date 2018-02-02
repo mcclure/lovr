@@ -1,26 +1,13 @@
 #include "filesystem/blob.h"
-#include "data/animation.h"
-#include "data/material.h"
 #include "util.h"
+#include "lib/vertex.h"
+#include "lib/map/map.h"
 #include "lib/vec/vec.h"
 
 #pragma once
 
 #define MAX_BONES_PER_VERTEX 4
 #define MAX_BONES 48
-
-typedef union {
-  void* data;
-  uint8_t* bytes;
-  uint32_t* ints;
-  float* floats;
-} ModelVertices;
-
-typedef union {
-  void* data;
-  uint16_t* shorts;
-  uint32_t* ints;
-} ModelIndices;
 
 typedef struct {
   const char* name;
@@ -45,14 +32,44 @@ typedef struct ModelNode {
 } ModelNode;
 
 typedef struct {
+  Color diffuseColor;
+  int diffuseTexture;
+} ModelMaterial;
+
+typedef struct {
+  double time;
+  float data[4];
+} Keyframe;
+
+typedef vec_t(Keyframe) vec_keyframe_t;
+
+typedef struct {
+  const char* node;
+  vec_keyframe_t positionKeyframes;
+  vec_keyframe_t rotationKeyframes;
+  vec_keyframe_t scaleKeyframes;
+} AnimationChannel;
+
+typedef map_t(AnimationChannel) map_channel_t;
+
+typedef struct {
+  const char* name;
+  float duration;
+  map_channel_t channels;
+  int channelCount;
+} Animation;
+
+typedef struct {
   Ref ref;
   ModelNode* nodes;
   map_int_t nodeMap;
   ModelPrimitive* primitives;
-  AnimationData* animationData;
-  MaterialData** materials;
-  ModelVertices vertices;
-  ModelIndices indices;
+  Animation* animations;
+  ModelMaterial* materials;
+  vec_void_t textures;
+  VertexFormat format;
+  VertexData vertices;
+  IndexData indices;
   int nodeCount;
   int primitiveCount;
   int animationCount;
@@ -60,11 +77,6 @@ typedef struct {
   int vertexCount;
   int indexCount;
   size_t indexSize;
-  bool hasNormals;
-  bool hasUVs;
-  bool hasVertexColors;
-  bool skinned;
-  size_t stride;
 } ModelData;
 
 ModelData* lovrModelDataCreate(Blob* blob);

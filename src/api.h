@@ -60,6 +60,8 @@ extern const luaL_Reg lovrTransform[];
 extern const luaL_Reg lovrWorld[];
 
 // Enums
+extern map_int_t ArcModes;
+extern map_int_t AttributeTypes;
 extern map_int_t BlendAlphaModes;
 extern map_int_t BlendModes;
 extern map_int_t CanvasTypes;
@@ -78,7 +80,6 @@ extern map_int_t JointTypes;
 extern map_int_t MaterialColors;
 extern map_int_t MaterialTextures;
 extern map_int_t MatrixTypes;
-extern map_int_t MeshAttributeTypes;
 extern map_int_t MeshDrawModes;
 extern map_int_t MeshUsages;
 extern map_int_t PolygonWindings;
@@ -90,7 +91,8 @@ extern map_int_t VerticalAligns;
 extern map_int_t WrapModes;
 
 // Shared helpers
-void luax_checkmeshformat(lua_State* L, int index, MeshFormat* format);
+int luax_pushvertexformat(lua_State* L, VertexFormat* format);
+int luax_pushvertex(lua_State* L, VertexData* vertex, VertexFormat* format);
 int luax_readtransform(lua_State* L, int index, mat4 transform, bool uniformScale);
 Blob* luax_readblob(lua_State* L, int index, const char* debug);
 int luax_pushshape(lua_State* L, Shape* shape);

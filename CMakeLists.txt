@@ -246,10 +246,8 @@ set(LOVR_SRC
   src/api/types/world.c
   src/audio/audio.c
   src/audio/source.c
-  src/data/animation.c
   src/data/audioStream.c
   src/data/data.c
-  src/data/material.c
   src/data/model.c
   src/data/rasterizer.c
   src/data/texture.c
@@ -268,6 +266,7 @@ set(LOVR_SRC
   src/graphics/texture.c
   src/headset/fake.c
   src/headset/headset.c
+  src/lib/vertex.c
   src/lib/glad/glad.c
   src/lib/lua-cjson/fpconv.c
   src/lib/lua-cjson/lua_cjson.c

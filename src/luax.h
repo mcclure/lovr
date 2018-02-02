@@ -2,6 +2,7 @@
 #include <lauxlib.h>
 #include <lualib.h>
 #include "lib/map/map.h"
+#include "lib/vertex.h"
 #include "util.h"
 
 #pragma once

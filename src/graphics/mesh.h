@@ -3,6 +3,7 @@
 #include "graphics/material.h"
 #include "math/math.h"
 #include "lib/glfw.h"
+#include "lib/vertex.h"
 
 #pragma once
 
@@ -21,55 +22,39 @@ typedef enum {
   MESH_STREAM = GL_STREAM_DRAW
 } MeshUsage;
 
-typedef enum {
-  MESH_FLOAT = GL_FLOAT,
-  MESH_BYTE = GL_UNSIGNED_BYTE,
-  MESH_INT = GL_INT
-} MeshAttributeType;
-
-typedef struct {
-  const char* name;
-  MeshAttributeType type;
-  int count;
-} MeshAttribute;
-
-typedef vec_t(MeshAttribute) MeshFormat;
-
 typedef struct {
   Ref ref;
-  void* data;
-  size_t count;
-  int stride;
+  size_t vertexCount;
+  VertexFormat format;
+  VertexData vertices;
+  IndexData indices;
+  size_t indexCount;
+  size_t indexSize;
   int enabledAttributes;
   bool attributesDirty;
   bool isMapped;
   int mapStart;
   size_t mapCount;
-  MeshFormat format;
+  bool isRangeEnabled;
+  int rangeStart;
+  int rangeCount;
   MeshDrawMode drawMode;
   MeshUsage usage;
   GLuint vao;
   GLuint vbo;
   GLuint ibo;
-  void* indices;
-  size_t indexCount;
-  size_t indexSize;
-  bool isRangeEnabled;
-  int rangeStart;
-  int rangeCount;
   Material* material;
   Shader* lastShader;
 } Mesh;
 
-Mesh* lovrMeshCreate(size_t count, MeshFormat* format, MeshDrawMode drawMode, MeshUsage usage);
+Mesh* lovrMeshCreate(size_t count, VertexFormat* format, MeshDrawMode drawMode, MeshUsage usage);
 void lovrMeshDestroy(const Ref* ref);
 void lovrMeshDraw(Mesh* mesh, mat4 transform, float* pose, int instances);
-MeshFormat lovrMeshGetVertexFormat(Mesh* mesh);
+VertexFormat* lovrMeshGetVertexFormat(Mesh* mesh);
 MeshDrawMode lovrMeshGetDrawMode(Mesh* mesh);
 void lovrMeshSetDrawMode(Mesh* mesh, MeshDrawMode drawMode);
 int lovrMeshGetVertexCount(Mesh* mesh);
-int lovrMeshGetVertexSize(Mesh* mesh);
-void* lovrMeshGetVertexMap(Mesh* mesh, size_t* count);
+IndexData lovrMeshGetVertexMap(Mesh* mesh, size_t* count);
 void lovrMeshSetVertexMap(Mesh* mesh, void* data, size_t count);
 bool lovrMeshIsAttributeEnabled(Mesh* mesh, const char* name);
 void lovrMeshSetAttributeEnabled(Mesh* mesh, const char* name, bool enabled);
@@ -79,5 +64,5 @@ void lovrMeshGetDrawRange(Mesh* mesh, int* start, int* count);
 void lovrMeshSetDrawRange(Mesh* mesh, int start, int count);
 Material* lovrMeshGetMaterial(Mesh* mesh);
 void lovrMeshSetMaterial(Mesh* mesh, Material* material);
-void* lovrMeshMap(Mesh* mesh, int start, size_t count, bool read, bool write);
+VertexData lovrMeshMap(Mesh* mesh, int start, size_t count, bool read, bool write);
 void lovrMeshUnmap(Mesh* mesh);

@@ -1,4 +1,5 @@
 #include "data/model.h"
+#include "data/texture.h"
 #include "filesystem/filesystem.h"
 #include "filesystem/file.h"
 #include "math/math.h"
@@ -17,39 +18,6 @@
 #include <assimp/matrix4x4.h>
 #include <assimp/vector3.h>
 #include <assimp/postprocess.h>
-
-static void assimpSumChildren(struct aiNode* assimpNode, int* totalChildren) {
-  (*totalChildren)++;
-  for (unsigned int i = 0; i < assimpNode->mNumChildren; i++) {
-    assimpSumChildren(assimpNode->mChildren[i], totalChildren);
-  }
-}
-
-static void assimpNodeTraversal(ModelData* modelData, struct aiNode* assimpNode, int* nodeId) {
-  int currentIndex = *nodeId;
-  ModelNode* node = &modelData->nodes[currentIndex];
-  node->name = strdup(assimpNode->mName.data);
-  map_set(&modelData->nodeMap, node->name, currentIndex);
-
-  // Transform
-  struct aiMatrix4x4 m = assimpNode->mTransformation;
-  aiTransposeMatrix4(&m);
-  mat4_set(node->transform, (float*) &m);
-
-  // Primitives
-  vec_init(&node->primitives);
-  vec_pusharr(&node->primitives, assimpNode->mMeshes, assimpNode->mNumMeshes);
-
-  // Children
-  vec_init(&node->children);
-  for (unsigned int n = 0; n < assimpNode->mNumChildren; n++) {
-    (*nodeId)++;
-    vec_push(&node->children, *nodeId);
-    ModelNode* child = &modelData->nodes[*nodeId];
-    child->parent = currentIndex;
-    assimpNodeTraversal(modelData, assimpNode->mChildren[n], nodeId);
-  }
-}
 
 static void normalizePath(char* path, char* dst, size_t size) {
   char* slash = path;
@@ -85,6 +53,91 @@ static void normalizePath(char* path, char* dst, size_t size) {
   }
 
   *--dst = '\0';
+}
+
+static void assimpSumChildren(struct aiNode* assimpNode, int* totalChildren) {
+  (*totalChildren)++;
+  for (unsigned int i = 0; i < assimpNode->mNumChildren; i++) {
+    assimpSumChildren(assimpNode->mChildren[i], totalChildren);
+  }
+}
+
+static void assimpNodeTraversal(ModelData* modelData, struct aiNode* assimpNode, int* nodeId) {
+  int currentIndex = *nodeId;
+  ModelNode* node = &modelData->nodes[currentIndex];
+  node->name = strdup(assimpNode->mName.data);
+  map_set(&modelData->nodeMap, node->name, currentIndex);
+
+  // Transform
+  struct aiMatrix4x4 m = assimpNode->mTransformation;
+  aiTransposeMatrix4(&m);
+  mat4_set(node->transform, (float*) &m);
+
+  // Primitives
+  vec_init(&node->primitives);
+  vec_pusharr(&node->primitives, assimpNode->mMeshes, assimpNode->mNumMeshes);
+
+  // Children
+  vec_init(&node->children);
+  for (unsigned int n = 0; n < assimpNode->mNumChildren; n++) {
+    (*nodeId)++;
+    vec_push(&node->children, *nodeId);
+    ModelNode* child = &modelData->nodes[*nodeId];
+    child->parent = currentIndex;
+    assimpNodeTraversal(modelData, assimpNode->mChildren[n], nodeId);
+  }
+}
+
+static Color readMaterialColor(struct aiMaterial* assimpMaterial, const char* key, unsigned int type, unsigned int index) {
+  struct aiColor4D assimpColor;
+  if (aiGetMaterialColor(assimpMaterial, key, type, index, &assimpColor) == aiReturn_SUCCESS) {
+    Color color;
+    color.r = assimpColor.r;
+    color.g = assimpColor.g;
+    color.b = assimpColor.b;
+    color.a = assimpColor.a;
+    return color;
+  } else {
+    return (Color) { 1, 1, 1, 1 };
+  }
+}
+
+static int readMaterialTexture(struct aiMaterial* assimpMaterial, enum aiTextureType type, ModelData* modelData, map_int_t* textureCache, const char* dirname) {
+  struct aiString str;
+  if (aiGetMaterialTexture(assimpMaterial, type, 0, &str, NULL, NULL, NULL, NULL, NULL, NULL) == aiReturn_SUCCESS) {
+    char* path = str.data;
+
+    int* cachedTexture = map_get(textureCache, path);
+    if (cachedTexture) {
+      return *cachedTexture;
+    }
+
+    int textureIndex = modelData->textures.length;
+
+    char fullPath[LOVR_PATH_MAX];
+    char normalizedPath[LOVR_PATH_MAX];
+    strncpy(fullPath, dirname, LOVR_PATH_MAX);
+    char* lastSlash = strrchr(fullPath, '/');
+    if (lastSlash) lastSlash[1] = '\0';
+    strncat(fullPath, path, LOVR_PATH_MAX);
+    normalizePath(fullPath, normalizedPath, LOVR_PATH_MAX);
+
+    size_t size;
+    void* data = lovrFilesystemRead(normalizedPath, &size);
+    if (data) {
+      Blob* blob = lovrBlobCreate(data, size, path);
+      vec_push(&modelData->textures, lovrTextureDataFromBlob(blob));
+    } else {
+      vec_push(&modelData->textures, NULL);
+    }
+
+    map_set(textureCache, path, textureIndex);
+    return textureIndex;
+  } else {
+    int textureIndex = modelData->textures.length;
+    vec_push(&modelData->textures, NULL);
+    return textureIndex;
+  }
 }
 
 // Blob IO (to avoid reading data twice)
@@ -204,37 +257,42 @@ ModelData* lovrModelDataCreate(Blob* blob) {
   modelData->nodeCount = 0;
   modelData->vertexCount = 0;
   modelData->indexCount = 0;
-  modelData->hasNormals = false;
-  modelData->hasUVs = false;
-  modelData->hasVertexColors = false;
-  modelData->skinned = false;
+
+  bool hasNormals = false;
+  bool hasUVs = false;
+  bool hasVertexColors = false;
+  bool isSkinned = false;
 
   for (unsigned int m = 0; m < scene->mNumMeshes; m++) {
     struct aiMesh* assimpMesh = scene->mMeshes[m];
     modelData->vertexCount += assimpMesh->mNumVertices;
     modelData->indexCount += assimpMesh->mNumFaces * 3;
-    modelData->hasNormals |= assimpMesh->mNormals != NULL;
-    modelData->hasUVs |= assimpMesh->mTextureCoords[0] != NULL;
-    modelData->hasVertexColors |= assimpMesh->mColors[0] != NULL;
-    modelData->skinned |= assimpMesh->mNumBones > 0;
+    hasNormals |= assimpMesh->mNormals != NULL;
+    hasUVs |= assimpMesh->mTextureCoords[0] != NULL;
+    hasVertexColors |= assimpMesh->mColors[0] != NULL;
+    isSkinned |= assimpMesh->mNumBones > 0;
   }
+
+  vertexFormatInit(&modelData->format);
+  vertexFormatAppend(&modelData->format, "lovrPosition", ATTR_FLOAT, 3);
+
+  if (hasNormals) vertexFormatAppend(&modelData->format, "lovrNormal", ATTR_FLOAT, 3);
+  if (hasUVs) vertexFormatAppend(&modelData->format, "lovrTexCoord", ATTR_FLOAT, 2);
+  if (hasVertexColors) vertexFormatAppend(&modelData->format, "lovrVertexColor", ATTR_BYTE, 4);
+  size_t boneByteOffset = modelData->format.stride;
+  if (isSkinned) vertexFormatAppend(&modelData->format, "lovrBones", ATTR_INT, 4);
+  if (isSkinned) vertexFormatAppend(&modelData->format, "lovrBoneWeights", ATTR_FLOAT, 4);
 
   // Allocate
   modelData->primitiveCount = scene->mNumMeshes;
   modelData->primitives = malloc(modelData->primitiveCount * sizeof(ModelPrimitive));
   modelData->indexSize = modelData->vertexCount > USHRT_MAX ? sizeof(uint32_t) : sizeof(uint16_t);
-  modelData->stride = 3 * sizeof(float);
-  modelData->stride += (modelData->hasNormals ? 3 : 0) * sizeof(float);
-  modelData->stride += (modelData->hasUVs ? 2 : 0) * sizeof(float);
-  modelData->stride += (modelData->hasVertexColors ? 4 : 0) * sizeof(uint8_t);
-  size_t boneByteOffset = modelData->stride;
-  modelData->stride += (modelData->skinned ? (4 * sizeof(uint32_t) + 4 * sizeof(float)) : 0);
-  modelData->vertices.data = malloc(modelData->stride * modelData->vertexCount);
+  modelData->vertices.data = malloc(modelData->format.stride * modelData->vertexCount);
   modelData->indices.data = malloc(modelData->indexCount * modelData->indexSize);
-  memset(modelData->vertices.data, 0, modelData->stride * modelData->vertexCount);
+  memset(modelData->vertices.data, 0, modelData->format.stride * modelData->vertexCount);
 
   // Load vertices
-  ModelIndices indices = modelData->indices;
+  IndexData indices = modelData->indices;
   uint32_t vertex = 0;
   uint32_t index = 0;
   for (unsigned int m = 0; m < scene->mNumMeshes; m++) {
@@ -265,14 +323,14 @@ ModelData* lovrModelDataCreate(Blob* blob) {
 
     // Vertices
     for (unsigned int v = 0; v < assimpMesh->mNumVertices; v++) {
-      ModelVertices vertices = modelData->vertices;
-      vertices.bytes += vertex * modelData->stride;
+      VertexData vertices = modelData->vertices;
+      vertices.bytes += vertex * modelData->format.stride;
 
       *vertices.floats++ = assimpMesh->mVertices[v].x;
       *vertices.floats++ = assimpMesh->mVertices[v].y;
       *vertices.floats++ = assimpMesh->mVertices[v].z;
 
-      if (modelData->hasNormals) {
+      if (hasNormals) {
         if (assimpMesh->mNormals) {
           *vertices.floats++ = assimpMesh->mNormals[v].x;
           *vertices.floats++ = assimpMesh->mNormals[v].y;
@@ -284,7 +342,7 @@ ModelData* lovrModelDataCreate(Blob* blob) {
         }
       }
 
-      if (modelData->hasUVs) {
+      if (hasUVs) {
         if (assimpMesh->mTextureCoords[0]) {
           *vertices.floats++ = assimpMesh->mTextureCoords[0][v].x;
           *vertices.floats++ = assimpMesh->mTextureCoords[0][v].y;
@@ -294,7 +352,7 @@ ModelData* lovrModelDataCreate(Blob* blob) {
         }
       }
 
-      if (modelData->hasVertexColors) {
+      if (hasVertexColors) {
         if (assimpMesh->mColors[0]) {
           *vertices.bytes++ = assimpMesh->mColors[0][v].r * 255;
           *vertices.bytes++ = assimpMesh->mColors[0][v].g * 255;
@@ -326,8 +384,8 @@ ModelData* lovrModelDataCreate(Blob* blob) {
       for (unsigned int w = 0; w < assimpBone->mNumWeights; w++) {
         uint32_t vertexIndex = baseVertex + assimpBone->mWeights[w].mVertexId;
         float weight = assimpBone->mWeights[w].mWeight;
-        ModelVertices vertices = modelData->vertices;
-        vertices.bytes += vertexIndex * modelData->stride;
+        VertexData vertices = modelData->vertices;
+        vertices.bytes += vertexIndex * modelData->format.stride;
         uint32_t* bones = (uint32_t*) (vertices.bytes + boneByteOffset);
         float* weights = (float*) (bones + MAX_BONES_PER_VERTEX);
 
@@ -344,41 +402,19 @@ ModelData* lovrModelDataCreate(Blob* blob) {
   }
 
   // Materials
+  map_int_t textureCache;
+  map_init(&textureCache);
+  vec_init(&modelData->textures);
   modelData->materialCount = scene->mNumMaterials;
-  modelData->materials = malloc(modelData->materialCount * sizeof(MaterialData*));
+  modelData->materials = malloc(modelData->materialCount * sizeof(ModelMaterial));
   for (unsigned int m = 0; m < scene->mNumMaterials; m++) {
-    MaterialData* materialData = lovrMaterialDataCreateEmpty();
-    struct aiMaterial* material = scene->mMaterials[m];
-    struct aiColor4D color;
-    struct aiString str;
+    ModelMaterial* material = &modelData->materials[m];
+    struct aiMaterial* assimpMaterial = scene->mMaterials[m];
 
-    if (aiGetMaterialColor(material, AI_MATKEY_COLOR_DIFFUSE, &color) == aiReturn_SUCCESS) {
-      materialData->colors[COLOR_DIFFUSE].r = color.r;
-      materialData->colors[COLOR_DIFFUSE].g = color.g;
-      materialData->colors[COLOR_DIFFUSE].b = color.b;
-      materialData->colors[COLOR_DIFFUSE].a = color.a;
-    }
-
-    if (aiGetMaterialTexture(material, aiTextureType_DIFFUSE, 0, &str, NULL, NULL, NULL, NULL, NULL, NULL) == aiReturn_SUCCESS) {
-      char* path = str.data;
-      char fullPath[LOVR_PATH_MAX];
-      char normalizedPath[LOVR_PATH_MAX];
-      strncpy(fullPath, blob->name, LOVR_PATH_MAX);
-      char* lastSlash = strrchr(fullPath, '/');
-      if (lastSlash) lastSlash[1] = '\0';
-      strncat(fullPath, path, LOVR_PATH_MAX);
-      normalizePath(fullPath, normalizedPath, LOVR_PATH_MAX);
-
-      size_t size;
-      void* data = lovrFilesystemRead(normalizedPath, &size);
-      if (data) {
-        Blob* blob = lovrBlobCreate(data, size, path);
-        materialData->textures[TEXTURE_DIFFUSE] = lovrTextureDataFromBlob(blob);
-      }
-    }
-
-    modelData->materials[m] = materialData;
+    material->diffuseColor = readMaterialColor(assimpMaterial, AI_MATKEY_COLOR_DIFFUSE);
+    material->diffuseTexture = readMaterialTexture(assimpMaterial, aiTextureType_DIFFUSE, modelData, &textureCache, blob->name);
   }
+  map_deinit(&textureCache);
 
   // Nodes
   modelData->nodeCount = 0;
@@ -390,18 +426,19 @@ ModelData* lovrModelDataCreate(Blob* blob) {
   assimpNodeTraversal(modelData, scene->mRootNode, &nodeIndex);
 
   // Animations
-  modelData->animationData = lovrAnimationDataCreate();
-  for (unsigned int i = 0; i < scene->mNumAnimations; i++) {
+  modelData->animationCount = scene->mNumAnimations;
+  modelData->animations = malloc(modelData->animationCount * sizeof(Animation));
+  for (int i = 0; i < modelData->animationCount; i++) {
     struct aiAnimation* assimpAnimation = scene->mAnimations[i];
     float ticksPerSecond = assimpAnimation->mTicksPerSecond;
 
-    Animation animation;
-    animation.name = strdup(assimpAnimation->mName.data);
-    animation.duration = assimpAnimation->mDuration / ticksPerSecond;
-    animation.channelCount = assimpAnimation->mNumChannels;
-    map_init(&animation.channels);
+    Animation* animation = &modelData->animations[i];
+    animation->name = strdup(assimpAnimation->mName.data);
+    animation->duration = assimpAnimation->mDuration / ticksPerSecond;
+    animation->channelCount = assimpAnimation->mNumChannels;
+    map_init(&animation->channels);
 
-    for (int j = 0; j < animation.channelCount; j++) {
+    for (int j = 0; j < animation->channelCount; j++) {
       struct aiNodeAnim* assimpChannel = assimpAnimation->mChannels[j];
       AnimationChannel channel;
 
@@ -437,10 +474,8 @@ ModelData* lovrModelDataCreate(Blob* blob) {
         vec_push(&channel.scaleKeyframes, keyframe);
       }
 
-      map_set(&animation.channels, channel.node, channel);
+      map_set(&animation->channels, channel.node, channel);
     }
-
-    vec_push(&modelData->animationData->animations, animation);
   }
 
   aiReleaseImport(scene);
@@ -459,18 +494,30 @@ void lovrModelDataDestroy(const Ref* ref) {
     map_deinit(&modelData->primitives[i].boneMap);
   }
 
-  if (modelData->animationData) {
-    lovrAnimationDataDestroy(modelData->animationData);
+  for (int i = 0; i < modelData->animationCount; i++) {
+    Animation* animation = &modelData->animations[i];
+    const char* key;
+    map_iter_t iter = map_iter(&animation->channels);
+    while ((key = map_next(&animation->channels, &iter)) != NULL) {
+      AnimationChannel* channel = map_get(&animation->channels, key);
+      vec_deinit(&channel->positionKeyframes);
+      vec_deinit(&channel->rotationKeyframes);
+      vec_deinit(&channel->scaleKeyframes);
+    }
+    map_deinit(&animation->channels);
   }
 
-  for (int i = 0; i < modelData->materialCount; i++) {
-    lovrMaterialDataDestroy(modelData->materials[i]);
+  for (int i = 0; i < modelData->textures.length; i++) {
+    TextureData* textureData = modelData->textures.data[i];
+    lovrRelease(&textureData->ref);
   }
 
+  vec_deinit(&modelData->textures);
   map_deinit(&modelData->nodeMap);
 
   free(modelData->nodes);
   free(modelData->primitives);
+  free(modelData->animations);
   free(modelData->materials);
   free(modelData->vertices.data);
   free(modelData->indices.data);
@@ -490,7 +537,7 @@ static void aabbIterator(ModelData* modelData, ModelNode* node, float aabb[6], m
       } else {
         index = modelData->indices.ints[primitive->drawStart + j];
       }
-      vec3_init(vertex, (float*) (modelData->vertices.bytes + index * modelData->stride));
+      vec3_init(vertex, (float*) (modelData->vertices.bytes + index * modelData->format.stride));
       mat4_transform(transform, vertex);
       aabb[0] = MIN(aabb[0], vertex[0]);
       aabb[1] = MAX(aabb[1], vertex[0]);

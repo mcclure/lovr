@@ -639,14 +639,18 @@ static ModelData* openvrControllerNewModelData(Controller* controller) {
   ModelData* modelData = malloc(sizeof(ModelData));
   if (!modelData) return NULL;
 
+  vertexFormatInit(&modelData->format);
+  vertexFormatAppend(&modelData->format, "lovrPosition", ATTR_FLOAT, 3);
+  vertexFormatAppend(&modelData->format, "lovrNormal", ATTR_FLOAT, 3);
+  vertexFormatAppend(&modelData->format, "lovrTexCoord", ATTR_FLOAT, 2);
+
+  modelData->vertexCount = vrModel->unVertexCount;
+  modelData->vertices.data = malloc(modelData->vertexCount * modelData->format.stride);
+
   modelData->indexCount = vrModel->unTriangleCount * 3;
   modelData->indexSize = sizeof(uint16_t);
   modelData->indices.data = malloc(modelData->indexCount * modelData->indexSize);
   memcpy(modelData->indices.data, vrModel->rIndexData, modelData->indexCount * modelData->indexSize);
-
-  modelData->vertexCount = vrModel->unVertexCount;
-  modelData->stride = 8 * sizeof(float);
-  modelData->vertices.data = malloc(modelData->vertexCount * modelData->stride);
 
   float* vertices = modelData->vertices.floats;
   int vertex = 0;
@@ -674,8 +678,8 @@ static ModelData* openvrControllerNewModelData(Controller* controller) {
 
   modelData->nodes = malloc(1 * sizeof(ModelNode));
   modelData->primitives = malloc(1 * sizeof(ModelPrimitive));
-  modelData->materials = malloc(1 * sizeof(MaterialData*));
-  modelData->animationData = NULL;
+  modelData->animations = NULL;
+  modelData->materials = malloc(1 * sizeof(ModelMaterial));
 
   // Geometry
   map_init(&modelData->nodeMap);
@@ -696,6 +700,8 @@ static ModelData* openvrControllerNewModelData(Controller* controller) {
   TextureData* textureData = malloc(sizeof(TextureData));
   if (!textureData) return NULL;
 
+  vec_push(&modelData->textures, textureData);
+
   int width = vrTexture->unWidth;
   int height = vrTexture->unHeight;
   size_t size = width * height * 4;
@@ -708,13 +714,8 @@ static ModelData* openvrControllerNewModelData(Controller* controller) {
   textureData->generateMipmaps = true;
   vec_init(&textureData->mipmaps);
 
-  modelData->materials[0] = lovrMaterialDataCreateEmpty();
-  modelData->materials[0]->textures[TEXTURE_DIFFUSE] = textureData;
-
-  modelData->hasNormals = true;
-  modelData->hasUVs = true;
-  modelData->hasVertexColors = false;
-  modelData->skinned = false;
+  modelData->materials[0].diffuseColor = (Color) { 1, 1, 1, 1 };
+  modelData->materials[0].diffuseTexture = 0;
 
   return modelData;
 }
