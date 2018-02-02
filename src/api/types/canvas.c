@@ -41,11 +41,21 @@ int l_lovrCanvasGetMSAA(lua_State* L) {
   return 1;
 }
 
+int l_lovrCanvasExportFile(lua_State* L) {
+  Canvas* canvas = luax_checktype(L, 1, Canvas);
+  Texture* texture = &canvas->texture;
+  const char *str = luaL_checkstring(L, 2);
+  if (!lovrTextureExportFile(texture, str))
+    luaL_error(L, "Failed to write PNG file");
+  return 0;
+}
+
 const luaL_Reg lovrCanvas[] = {
   { "renderTo", l_lovrCanvasRenderTo },
   { "getSampleFilter", l_lovrCanvasGetSampleFilter },
   { "setSampleFilter", l_lovrCanvasSetSampleFilter },
   { "getFormat", l_lovrCanvasGetFormat },
   { "getMSAA", l_lovrCanvasGetMSAA },
+  { "exportFile", l_lovrCanvasExportFile },
   { NULL, NULL }
 };
