@@ -1,6 +1,7 @@
-#include "filesystem/blob.h"
+#include "data/blob.h"
+#include "data/textureData.h"
+#include "data/vertexData.h"
 #include "util.h"
-#include "lib/vertex.h"
 #include "lib/map/map.h"
 #include "lib/vec/vec.h"
 
@@ -26,6 +27,7 @@ typedef struct {
 typedef struct ModelNode {
   const char* name;
   float transform[16];
+  float globalTransform[16];
   int parent;
   vec_uint_t children;
   vec_uint_t primitives;
@@ -33,7 +35,15 @@ typedef struct ModelNode {
 
 typedef struct {
   Color diffuseColor;
+  Color emissiveColor;
   int diffuseTexture;
+  int emissiveTexture;
+  int metalnessTexture;
+  int roughnessTexture;
+  int occlusionTexture;
+  int normalTexture;
+  float metalness;
+  float roughness;
 } ModelMaterial;
 
 typedef struct {
@@ -61,24 +71,22 @@ typedef struct {
 
 typedef struct {
   Ref ref;
+  VertexData* vertexData;
+  IndexPointer indices;
+  int indexCount;
+  size_t indexSize;
   ModelNode* nodes;
   map_int_t nodeMap;
   ModelPrimitive* primitives;
   Animation* animations;
   ModelMaterial* materials;
   vec_void_t textures;
-  VertexFormat format;
-  VertexData vertices;
-  IndexData indices;
   int nodeCount;
   int primitiveCount;
   int animationCount;
   int materialCount;
-  int vertexCount;
-  int indexCount;
-  size_t indexSize;
 } ModelData;
 
 ModelData* lovrModelDataCreate(Blob* blob);
-void lovrModelDataDestroy(const Ref* ref);
+void lovrModelDataDestroy(void* ref);
 void lovrModelDataGetAABB(ModelData* modelData, float aabb[6]);

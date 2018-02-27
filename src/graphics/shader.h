@@ -11,8 +11,9 @@
 #define LOVR_SHADER_NORMAL 1
 #define LOVR_SHADER_TEX_COORD 2
 #define LOVR_SHADER_VERTEX_COLOR 3
-#define LOVR_SHADER_BONES 4
-#define LOVR_SHADER_BONE_WEIGHTS 5
+#define LOVR_SHADER_TANGENT 4
+#define LOVR_SHADER_BONES 5
+#define LOVR_SHADER_BONE_WEIGHTS 6
 #define LOVR_MAX_UNIFORM_LENGTH 256
 
 typedef enum {
@@ -64,7 +65,7 @@ typedef struct {
 
 Shader* lovrShaderCreate(const char* vertexSource, const char* fragmentSource);
 Shader* lovrShaderCreateDefault(DefaultShader type);
-void lovrShaderDestroy(const Ref* ref);
+void lovrShaderDestroy(void* ref);
 void lovrShaderBind(Shader* shader);
 int lovrShaderGetAttributeId(Shader* shader, const char* name);
 Uniform* lovrShaderGetUniform(Shader* shader, const char* name);

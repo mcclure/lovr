@@ -1,4 +1,4 @@
-#include "data/texture.h"
+#include "data/textureData.h"
 #include "lib/glfw.h"
 #include "util.h"
 
@@ -6,7 +6,9 @@
 
 typedef enum {
   TEXTURE_2D = GL_TEXTURE_2D,
-  TEXTURE_CUBE = GL_TEXTURE_CUBE_MAP
+  TEXTURE_CUBE = GL_TEXTURE_CUBE_MAP,
+  TEXTURE_ARRAY = GL_TEXTURE_2D_ARRAY,
+  TEXTURE_VOLUME = GL_TEXTURE_3D
 } TextureType;
 
 typedef enum {
@@ -33,10 +35,16 @@ typedef struct {
   WrapMode r;
 } TextureWrap;
 
+typedef enum {
+  SAMPLE_FILTER_WEIGHTED_AVERAGE,
+  SAMPLE_FILTER_MIN,
+  SAMPLE_FILTER_MAX,
+} SampleFilter;
+
 typedef struct {
   Ref ref;
   TextureType type;
-  TextureData* slices[6];
+  TextureData** slices;
   int sliceCount;
   int width;
   int height;
@@ -45,14 +53,18 @@ typedef struct {
   SampleFilter sampleFilter;
   TextureWrap wrap;
   bool srgb;
+  bool mipmaps;
+  bool allocated;
 } Texture;
 
 GLenum lovrTextureFormatGetGLFormat(TextureFormat format);
 GLenum lovrTextureFormatGetGLInternalFormat(TextureFormat format, bool srgb);
 bool lovrTextureFormatIsCompressed(TextureFormat format);
 
-Texture* lovrTextureCreate(TextureType type, TextureData* data[6], int count, bool srgb);
-void lovrTextureDestroy(const Ref* ref);
+Texture* lovrTextureCreate(TextureType type, TextureData** slices, int count, bool srgb, bool mipmaps);
+void lovrTextureDestroy(void* ref);
+TextureType lovrTextureGetType(Texture* texture);
+void lovrTextureReplacePixels(Texture* texture, TextureData* data, int slice);
 TextureFilter lovrTextureGetFilter(Texture* texture);
 void lovrTextureSetFilter(Texture* texture, TextureFilter filter);
 TextureWrap lovrTextureGetWrap(Texture* texture);

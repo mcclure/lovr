@@ -2,7 +2,7 @@
 #include "graphics/graphics.h"
 #include "graphics/texture.h"
 #include "data/rasterizer.h"
-#include "data/texture.h"
+#include "data/textureData.h"
 #include "util.h"
 #include <string.h>
 #include <stdlib.h>
@@ -26,7 +26,7 @@ Font* lovrFontCreate(Rasterizer* rasterizer) {
   Font* font = lovrAlloc(sizeof(Font), lovrFontDestroy);
   if (!font) return NULL;
 
-  lovrRetain(&rasterizer->ref);
+  lovrRetain(rasterizer);
   font->rasterizer = rasterizer;
   font->texture = NULL;
   font->lineHeight = 1.f;
@@ -53,10 +53,10 @@ Font* lovrFontCreate(Rasterizer* rasterizer) {
   return font;
 }
 
-void lovrFontDestroy(const Ref* ref) {
-  Font* font = containerof(ref, Font);
-  lovrRelease(&font->rasterizer->ref);
-  lovrRelease(&font->texture->ref);
+void lovrFontDestroy(void* ref) {
+  Font* font = ref;
+  lovrRelease(font->rasterizer);
+  lovrRelease(font->texture);
   map_deinit(&font->atlas.glyphs);
   map_deinit(&font->kerning);
   free(font);
@@ -313,10 +313,7 @@ void lovrFontExpandTexture(Font* font) {
 }
 
 void lovrFontCreateTexture(Font* font) {
-  if (font->texture) {
-    lovrRelease(&font->texture->ref);
-  }
-
+  lovrRelease(font->texture);
   int maxTextureSize = lovrGraphicsGetLimits().textureSize;
   if (font->atlas.width > maxTextureSize || font->atlas.height > maxTextureSize) {
     lovrThrow("Font texture atlas overflow: exceeded %d x %d", maxTextureSize, maxTextureSize);
@@ -324,7 +321,7 @@ void lovrFontCreateTexture(Font* font) {
 
   TextureData* textureData = lovrTextureDataGetBlank(font->atlas.width, font->atlas.height, 0x0, FORMAT_RGB);
   TextureFilter filter = { .mode = FILTER_BILINEAR };
-  font->texture = lovrTextureCreate(TEXTURE_2D, &textureData, 1, false);
+  font->texture = lovrTextureCreate(TEXTURE_2D, &textureData, 1, false, false);
   lovrTextureSetFilter(font->texture, filter);
   lovrTextureSetWrap(font->texture, (TextureWrap) { .s = WRAP_CLAMP, .t = WRAP_CLAMP });
 }

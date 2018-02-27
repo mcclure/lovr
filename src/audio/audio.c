@@ -3,15 +3,11 @@
 #include "math/quat.h"
 #include "util.h"
 #include <stdlib.h>
-#include "lovr.h"
 
 static AudioState state;
-static bool audioAlreadyInit = false;
 
 void lovrAudioInit() {
-  if (audioAlreadyInit) { // During a reload, bring down the audio device then recreate it
-    lovrAudioDestroy();
-  }
+  if (state.initialized) return;
 
   ALCdevice* device = alcOpenDevice(NULL);
   lovrAssert(device, "Unable to open default audio device");
@@ -36,18 +32,16 @@ void lovrAudioInit() {
   quat_set(state.orientation, 0, 0, 0, -1);
   vec3_set(state.position, 0, 0, 0);
   vec3_set(state.velocity, 0, 0, 0);
-
-  if (!audioAlreadyInit) {
-    atexit(lovrAudioDestroy);
-    audioAlreadyInit = true;
-  }
+  state.initialized = true;
 }
 
 void lovrAudioDestroy() {
+  if (!state.initialized) return;
   alcMakeContextCurrent(NULL);
   alcDestroyContext(state.context);
   alcCloseDevice(state.device);
   vec_deinit(&state.sources);
+  memset(&state, 0, sizeof(AudioState));
 }
 
 void lovrAudioUpdate() {
@@ -67,16 +61,21 @@ void lovrAudioUpdate() {
     } else if (isStopped) {
       lovrAudioStreamRewind(source->stream);
       vec_splice(&state.sources, i, 1);
-      lovrRelease(&source->ref);
+      lovrRelease(source);
     }
   }
 }
 
 void lovrAudioAdd(Source* source) {
   if (!lovrAudioHas(source)) {
-    lovrRetain(&source->ref);
+    lovrRetain(source);
     vec_push(&state.sources, source);
   }
+}
+
+void lovrAudioGetDopplerEffect(float* factor, float* speedOfSound) {
+  alGetFloatv(AL_DOPPLER_FACTOR, factor);
+  alGetFloatv(AL_SPEED_OF_SOUND, speedOfSound);
 }
 
 void lovrAudioGetOrientation(float* angle, float* ax, float* ay, float* az) {
@@ -130,6 +129,11 @@ void lovrAudioRewind() {
   vec_foreach(&state.sources, source, i) {
     lovrSourceRewind(source);
   }
+}
+
+void lovrAudioSetDopplerEffect(float factor, float speedOfSound) {
+  alDopplerFactor(factor);
+  alSpeedOfSound(speedOfSound);
 }
 
 void lovrAudioSetOrientation(float angle, float ax, float ay, float az) {

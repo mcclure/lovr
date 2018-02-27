@@ -1,11 +1,22 @@
 #include "resources/shaders.h"
 
+const char* lovrShaderScalarUniforms[] = {
+  "lovrMetalness",
+  "lovrRoughness"
+};
+
 const char* lovrShaderColorUniforms[] = {
-  "lovrDiffuseColor"
+  "lovrDiffuseColor",
+  "lovrEmissiveColor"
 };
 
 const char* lovrShaderTextureUniforms[] = {
   "lovrDiffuseTexture",
+  "lovrEmissiveTexture",
+  "lovrMetalnessTexture",
+  "lovrRoughnessTexture",
+  "lovrOcclusionTexture",
+  "lovrNormalTexture",
   "lovrEnvironmentTexture"
 };
 
@@ -21,6 +32,7 @@ const char* lovrShaderVertexPrefix = ""
 "in vec3 lovrNormal; \n"
 "in vec2 lovrTexCoord; \n"
 "in vec4 lovrVertexColor; \n"
+"in vec3 lovrTangent; \n"
 "in ivec4 lovrBones; \n"
 "in vec4 lovrBoneWeights; \n"
 "out vec2 texCoord; \n"
@@ -44,10 +56,18 @@ const char* lovrShaderFragmentPrefix = ""
 #endif
 "in vec2 texCoord; \n"
 "in vec4 vertexColor; \n"
-"out vec4 lovrFragColor; \n"
+"out vec4 lovrCanvas[gl_MaxDrawBuffers]; \n"
+"uniform float lovrMetalness; \n"
+"uniform float lovrRoughness; \n"
 "uniform vec4 lovrColor; \n"
 "uniform vec4 lovrDiffuseColor; \n"
+"uniform vec4 lovrEmissiveColor; \n"
 "uniform sampler2D lovrDiffuseTexture; \n"
+"uniform sampler2D lovrEmissiveTexture; \n"
+"uniform sampler2D lovrMetalnessTexture; \n"
+"uniform sampler2D lovrRoughnessTexture; \n"
+"uniform sampler2D lovrOcclusionTexture; \n"
+"uniform sampler2D lovrNormalTexture; \n"
 "uniform samplerCube lovrEnvironmentTexture; \n"
 "#line 0 \n";
 
@@ -66,7 +86,11 @@ const char* lovrShaderVertexSuffix = ""
 
 const char* lovrShaderFragmentSuffix = ""
 "void main() { \n"
-"  lovrFragColor = color(lovrColor, lovrDiffuseTexture, texCoord); \n"
+"#ifdef MULTICANVAS \n"
+"  colors(lovrColor, lovrDiffuseTexture, texCoord); \n"
+"#else \n"
+"  lovrCanvas[0] = color(lovrColor, lovrDiffuseTexture, texCoord); \n"
+"#endif \n"
 "}";
 
 const char* lovrDefaultVertexShader = ""
@@ -83,7 +107,8 @@ const char* lovrSkyboxVertexShader = ""
 "out vec3 texturePosition; \n"
 "vec4 position(mat4 projection, mat4 transform, vec4 vertex) { \n"
 "  texturePosition = vertex.xyz; \n"
-"  return projection * transform * vertex; \n"
+"  texturePosition.y *= -1; \n"
+"  return (projection * transform * vertex).xyww; \n"
 "}";
 
 const char* lovrSkyboxFragmentShader = ""

@@ -1,4 +1,4 @@
-#include "filesystem/blob.h"
+#include "data/blob.h"
 #include "util.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -12,12 +12,6 @@
 #define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT 0x8C4E
 #define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT 0x8C4F
 #endif
-
-typedef enum {
-  SAMPLE_FILTER_WEIGHTED_AVERAGE,
-  SAMPLE_FILTER_MIN,
-  SAMPLE_FILTER_MAX,
-} SampleFilter;
 
 typedef enum {
   FORMAT_RGB,
@@ -46,11 +40,13 @@ typedef struct {
   void* data;
   Blob* blob;
   TextureFormat format;
-  bool generateMipmaps;
   vec_mipmap_t mipmaps;
 } TextureData;
 
 TextureData* lovrTextureDataGetBlank(int width, int height, uint8_t value, TextureFormat format);
 TextureData* lovrTextureDataGetEmpty(int width, int height, TextureFormat format);
 TextureData* lovrTextureDataFromBlob(Blob* blob);
-void lovrTextureDataDestroy(const Ref* ref);
+Color lovrTextureDataGetPixel(TextureData* textureData, int x, int y);
+void lovrTextureDataSetPixel(TextureData* textureData, int x, int y, Color color);
+bool lovrTextureDataEncode(TextureData* textureData, const char* filename);
+void lovrTextureDataDestroy(void* ref);

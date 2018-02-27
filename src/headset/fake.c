@@ -12,14 +12,14 @@
 #include <stdbool.h>
 
 typedef struct {
-  bool isInitialized;
+  bool initialized;
   HeadsetType type;
 
   vec_controller_t controllers;
 
   float clipNear;
   float clipFar;
-  float FOV;
+  float fov;
 
   float vel[3];
   float pos[3];
@@ -27,13 +27,10 @@ typedef struct {
   double yaw;
   double pitch;
 
-  float orientation[4]; // derived from pitch and yaw
-
-  float projection[16]; // projection matrix
-
+  float orientation[4];
+  float projection[16];
   float transform[16];
 
-  // keep track of currently hooked window, if any
   GLFWwindow* hookedWindow;
 
   bool mouselook;
@@ -160,15 +157,11 @@ static void check_window_existance() {
   }
 }
 
-static bool fakeIsAvailable() {
-  return true;
-}
-
-static void fakeInit() {
+static bool fakeInit() {
+  if (state.initialized) return true;
   state.clipNear = 0.1f;
   state.clipFar = 100.f;
-  state.FOV = 67.0f * M_PI / 100.0f;
-  // TODO: aspect here too?
+  state.fov = 67.0f * M_PI / 100.0f;
 
   mat4_identity(state.transform);
 
@@ -179,45 +172,36 @@ static void fakeInit() {
   vec3_set(state.vel, 0, 0, 0);
   vec3_set(state.pos, 0, 0, 0);
 
-  // set up controller(s)
   vec_init(&state.controllers);
-  Controller* controller = lovrAlloc(sizeof(Controller), lovrControllerDestroy);
-  controller->id = state.controllers.length;
+  Controller* controller = lovrAlloc(sizeof(Controller), free);
+  controller->id = 0;
   vec_push(&state.controllers, controller);
-
-  lovrEventAddPump(fakePoll);
 
   state.mouselook = false;
   state.hookedWindow = NULL;
-  state.isInitialized = true;
-
+  state.initialized = true;
 #ifdef SPACEMOUSE_SUPPORT
   spacemouseInit();
 #endif
+  return true;
 }
 
 static void fakeDestroy() {
+  if (!state.initialized) return;
+
   int i;
   Controller *controller;
-
   vec_foreach(&state.controllers, controller, i) {
-    lovrRelease(&controller->ref);
+    lovrRelease(controller);
   }
-
   vec_deinit(&state.controllers);
-  state.isInitialized = false;
 
 #ifdef SPACEMOUSE_SUPPORT
   spacemouseDestroy();
 #endif
-}
 
-static void fakePoll() {
-  //
-}
-
-static bool fakeIsPresent() {
-  return true;
+  state.initialized = false;
+  memset(&state, 0, sizeof(FakeHeadsetState));
 }
 
 static HeadsetType fakeGetType() {
@@ -226,6 +210,10 @@ static HeadsetType fakeGetType() {
 
 static HeadsetOrigin fakeGetOriginType() {
   return ORIGIN_HEAD;
+}
+
+static bool fakeIsMounted() {
+  return true;
 }
 
 static bool fakeIsMirrored() {
@@ -239,7 +227,7 @@ static void fakeSetMirrored(bool mirror) {
 static void fakeGetDisplayDimensions(int* width, int* height) {
   GLFWwindow* window = glfwGetCurrentContext();
   if (window) {
-    glfwGetWindowSize(window,width,height);
+    glfwGetFramebufferSize(window, width, height);
   }
 }
 
@@ -288,7 +276,7 @@ static vec_controller_t* fakeGetControllers() {
   return &state.controllers;
 }
 
-static bool fakeControllerIsPresent(Controller* controller) {
+static bool fakeControllerIsConnected(Controller* controller) {
   return true;
 }
 
@@ -337,33 +325,27 @@ static ModelData* fakeControllerNewModelData(Controller* controller) {
 }
 
 static void fakeRenderTo(headsetRenderCallback callback, void* userdata) {
-//  float head[16], transform[16], projection[16];
-
-  // TODO: Head transform
-  // TODO: Eye transform
-  // Projection
-
-  int w,h;
   GLFWwindow* window = glfwGetCurrentContext();
-  if(!window) {
+  if (!window) {
     return;
   }
 
-  glfwGetWindowSize(window, &w, &h);
+  int w, h;
+  glfwGetFramebufferSize(window, &w, &h);
+  mat4_perspective(state.projection, state.clipNear, state.clipFar, 67 * M_PI / 180.0, (float) w / h);
 
-  mat4_perspective(state.projection, state.clipNear, state.clipFar, 67 * M_PI / 180.0, (float)w/h);
+  float transform[16];
+  mat4_set(transform, state.transform);
+  mat4_invert(transform);
 
-  // render
+  int viewport[4] = { 0, 0, w, h };
+  lovrGraphicsPushDisplay(0, state.projection, viewport);
   lovrGraphicsPush();
-  float inv[16];
-  mat4_set(inv,state.transform);
-  mat4_invert(inv);
-  lovrGraphicsMatrixTransform(MATRIX_VIEW, inv);
-
-  lovrGraphicsSetProjection(state.projection);
-  lovrGraphicsClear(true, true, true);
+  lovrGraphicsMatrixTransform(MATRIX_VIEW, transform);
+  lovrGraphicsClear(true, true, true, lovrGraphicsGetBackgroundColor(), 1., 0);
   callback(EYE_LEFT, userdata);
   lovrGraphicsPop();
+  lovrGraphicsPopDisplay();
 }
 
 static void fakeUpdate(float dt) {
@@ -411,13 +393,11 @@ static void fakeUpdate(float dt) {
 
 HeadsetInterface lovrHeadsetFakeDriver = {
   DRIVER_FAKE,
-  fakeIsAvailable,
   fakeInit,
   fakeDestroy,
-  fakePoll,
-  fakeIsPresent,
   fakeGetType,
   fakeGetOriginType,
+  fakeIsMounted,
   fakeIsMirrored,
   fakeSetMirrored,
   fakeGetDisplayDimensions,
@@ -430,7 +410,7 @@ HeadsetInterface lovrHeadsetFakeDriver = {
   fakeGetVelocity,
   fakeGetAngularVelocity,
   fakeGetControllers,
-  fakeControllerIsPresent,
+  fakeControllerIsConnected,
   fakeControllerGetHand,
   fakeControllerGetPose,
   fakeControllerGetAxis,

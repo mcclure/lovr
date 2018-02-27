@@ -1,5 +1,5 @@
 #include "graphics/graphics.h"
-#include "data/texture.h"
+#include "data/textureData.h"
 #include "data/rasterizer.h"
 #include "resources/shaders.h"
 #include "event/event.h"
@@ -13,7 +13,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
-#include "lovr.h"
 
 static GraphicsState state;
 
@@ -41,34 +40,40 @@ void lovrGraphicsInit() {
 }
 
 void lovrGraphicsDestroy() {
+  if (!state.initialized) return;
   lovrGraphicsSetShader(NULL);
   lovrGraphicsSetFont(NULL);
   for (int i = 0; i < DEFAULT_SHADER_COUNT; i++) {
-    if (state.defaultShaders[i]) lovrRelease(&state.defaultShaders[i]->ref);
+    lovrRelease(state.defaultShaders[i]);
   }
-  if (state.defaultMaterial) lovrRelease(&state.defaultMaterial->ref);
-  if (state.defaultFont) lovrRelease(&state.defaultFont->ref);
-  if (state.defaultTexture) lovrRelease(&state.defaultTexture->ref);
+  lovrRelease(state.defaultMaterial);
+  lovrRelease(state.defaultFont);
+  lovrRelease(state.defaultTexture);
   glDeleteVertexArrays(1, &state.streamVAO);
   glDeleteBuffers(1, &state.streamVBO);
   glDeleteBuffers(1, &state.streamIBO);
   vec_deinit(&state.streamData);
   vec_deinit(&state.streamIndices);
+  memset(&state, 0, sizeof(GraphicsState));
 }
 
 void lovrGraphicsReset() {
   int w = lovrGraphicsGetWidth();
   int h = lovrGraphicsGetHeight();
-  float projection[16];
   state.transform = 0;
-  state.view = 0;
+  state.display = 0;
   state.defaultShader = SHADER_DEFAULT;
+  mat4_perspective(state.displays[state.display].projection, .01f, 100.f, 67 * M_PI / 180., (float) w / h);
+  state.displays[state.display].viewport[0] = 0;
+  state.displays[state.display].viewport[1] = 0;
+  state.displays[state.display].viewport[2] = w;
+  state.displays[state.display].viewport[3] = h;
   lovrGraphicsSetBackgroundColor((Color) { 0, 0, 0, 1. });
   lovrGraphicsSetBlendMode(BLEND_ALPHA, BLEND_ALPHA_MULTIPLY);
   lovrGraphicsSetColor((Color) { 1., 1., 1., 1. });
   lovrGraphicsSetCullingEnabled(false);
   lovrGraphicsSetDefaultFilter((TextureFilter) { .mode = FILTER_TRILINEAR });
-  lovrGraphicsSetDepthTest(COMPARE_LEQUAL);
+  lovrGraphicsSetDepthTest(COMPARE_LEQUAL, true);
   lovrGraphicsSetFont(NULL);
   lovrGraphicsSetLineWidth(1);
   lovrGraphicsSetPointSize(1);
@@ -77,13 +82,25 @@ void lovrGraphicsReset() {
   lovrGraphicsSetWinding(WINDING_COUNTERCLOCKWISE);
   lovrGraphicsSetWireframe(false);
   lovrGraphicsSetViewport(0, 0, w, h);
-  lovrGraphicsSetProjection(mat4_perspective(projection, .01f, 100.f, 67 * M_PI / 180., (float) w / h));
   lovrGraphicsOrigin();
 }
 
-void lovrGraphicsClear(bool color, bool depth, bool stencil) {
-  if (!color && !depth && !stencil) return;
-  glClear((color ? GL_COLOR_BUFFER_BIT : 0) | (depth ? GL_DEPTH_BUFFER_BIT : 0) | (stencil ? GL_STENCIL_BUFFER_BIT : 0));
+void lovrGraphicsClear(bool clearColor, bool clearDepth, bool clearStencil, Color color, float depth, int stencil) {
+  if (clearColor) {
+    float c[4] = { color.r, color.g, color.b, color.a };
+    glClearBufferfv(GL_COLOR, 0, c);
+    for (int i = 1; i < state.canvasCount; i++) {
+      glClearBufferfv(GL_COLOR, i, c);
+    }
+  }
+
+  if (clearDepth) {
+    glClearBufferfv(GL_DEPTH, 0, &depth);
+  }
+
+  if (clearStencil) {
+    glClearBufferiv(GL_STENCIL, 0, &stencil);
+  }
 }
 
 void lovrGraphicsPresent() {
@@ -101,7 +118,7 @@ void lovrGraphicsPrepare(Material* material, float* pose) {
 
   mat4 model = state.transforms[state.transform][MATRIX_MODEL];
   mat4 view = state.transforms[state.transform][MATRIX_VIEW];
-  mat4 projection = state.views[state.view].projection;
+  mat4 projection = state.displays[state.display].projection;
   lovrShaderSetMatrix(shader, "lovrModel", model, 16);
   lovrShaderSetMatrix(shader, "lovrView", view, 16);
   lovrShaderSetMatrix(shader, "lovrProjection", projection, 16);
@@ -149,6 +166,11 @@ void lovrGraphicsPrepare(Material* material, float* pose) {
     material = lovrGraphicsGetDefaultMaterial();
   }
 
+  for (int i = 0; i < MAX_MATERIAL_SCALARS; i++) {
+    float value = lovrMaterialGetScalar(material, i);
+    lovrShaderSetFloat(shader, lovrShaderScalarUniforms[i], &value, 1);
+  }
+
   for (int i = 0; i < MAX_MATERIAL_COLORS; i++) {
     Color color = lovrMaterialGetColor(material, i);
     gammaCorrectColor(&color);
@@ -165,57 +187,51 @@ void lovrGraphicsPrepare(Material* material, float* pose) {
   lovrShaderBind(shader);
 }
 
-static bool graphicsAlreadyInit = false;
-
 void lovrGraphicsCreateWindow(int w, int h, bool fullscreen, int msaa, const char* title, const char* icon) {
-  if (graphicsAlreadyInit) {
-    lovrGraphicsReset();
-    return;
-  } else {
-    lovrAssert(!state.window, "Window is already created");
-    graphicsAlreadyInit = true;
-  }
+  lovrAssert(!state.window, "Window is already created");
 
+  if ((state.window = glfwGetCurrentContext()) == NULL) {
 #ifdef EMSCRIPTEN
-  glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-  glfwWindowHint(GLFW_SAMPLES, msaa);
-  glfwWindowHint(GLFW_SRGB_CAPABLE, state.gammaCorrect);
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+    glfwWindowHint(GLFW_SAMPLES, msaa);
+    glfwWindowHint(GLFW_SRGB_CAPABLE, state.gammaCorrect);
 #else
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-  glfwWindowHint(GLFW_SAMPLES, msaa);
-  glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
-  glfwWindowHint(GLFW_SRGB_CAPABLE, state.gammaCorrect);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+    glfwWindowHint(GLFW_SAMPLES, msaa);
+    glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
+    glfwWindowHint(GLFW_SRGB_CAPABLE, state.gammaCorrect);
 #endif
 
-  GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-  const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-  if (fullscreen) {
-    glfwWindowHint(GLFW_RED_BITS, mode->redBits);
-    glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
-    glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
-    glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
-  }
+    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+    if (fullscreen) {
+      glfwWindowHint(GLFW_RED_BITS, mode->redBits);
+      glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
+      glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
+      glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
+    }
 
-  state.window = glfwCreateWindow(w ? w : mode->width, h ? h : mode->height, title, fullscreen ? monitor : NULL, NULL);
-  if (!state.window) {
-    glfwTerminate();
-    lovrThrow("Could not create window");
-  }
+    state.window = glfwCreateWindow(w ? w : mode->width, h ? h : mode->height, title, fullscreen ? monitor : NULL, NULL);
+    if (!state.window) {
+      glfwTerminate();
+      lovrThrow("Could not create window");
+    }
 
-  if (icon) {
-    GLFWimage image;
-    image.pixels = stbi_load(icon, &image.width, &image.height, NULL, 3);
-    glfwSetWindowIcon(state.window, 1, &image);
-    free(image.pixels);
-  }
+    if (icon) {
+      GLFWimage image;
+      image.pixels = stbi_load(icon, &image.width, &image.height, NULL, 3);
+      glfwSetWindowIcon(state.window, 1, &image);
+      free(image.pixels);
+    }
 
-  glfwMakeContextCurrent(state.window);
-  glfwSetWindowCloseCallback(state.window, onCloseWindow);
+    glfwMakeContextCurrent(state.window);
+    glfwSetWindowCloseCallback(state.window, onCloseWindow);
+  }
 
 #ifndef EMSCRIPTEN
   gladLoadGLLoader((GLADloadproc) glfwGetProcAddress);
@@ -237,7 +253,7 @@ void lovrGraphicsCreateWindow(int w, int h, bool fullscreen, int msaa, const cha
   vec_init(&state.streamData);
   vec_init(&state.streamIndices);
   lovrGraphicsReset();
-  atexit(lovrGraphicsDestroy);
+  state.initialized = true;
 }
 
 int lovrGraphicsGetWidth() {
@@ -323,6 +339,58 @@ void lovrGraphicsSetBlendMode(BlendMode mode, BlendAlphaMode alphaMode) {
   }
 }
 
+void lovrGraphicsGetCanvas(Canvas** canvas, int* count) {
+  *count = state.canvasCount;
+  memcpy(canvas, state.canvas, state.canvasCount * sizeof(Canvas*));
+}
+
+void lovrGraphicsSetCanvas(Canvas** canvas, int count) {
+  if (count == state.canvasCount && !memcmp(state.canvas, canvas, count * sizeof(Canvas*))) {
+    return;
+  }
+
+  lovrAssert(count <= MAX_CANVASES, "Attempt to simultaneously render to %d canvases (the maximum is %d)", count, MAX_CANVASES);
+
+  if (state.canvasCount > 0 && state.canvas[0]->msaa > 0) {
+    int width = state.canvas[0]->texture.width;
+    int height = state.canvas[0]->texture.height;
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, state.canvas[0]->framebuffer);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, state.canvas[0]->resolveFramebuffer);
+    glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+  }
+
+  for (int i = 0; i < count; i++) {
+    lovrRetain(&canvas[i]->texture);
+  }
+
+  for (int i = 0; i < state.canvasCount; i++) {
+    lovrRelease(&state.canvas[i]->texture);
+  }
+
+  if (count == 0) {
+    lovrGraphicsBindFramebuffer(state.displays[state.display].framebuffer);
+    int* viewport = state.displays[state.display].viewport;
+    lovrGraphicsSetViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+  } else {
+    memcpy(state.canvas, canvas, count * sizeof(Canvas*));
+    lovrGraphicsBindFramebuffer(canvas[0]->framebuffer);
+    lovrGraphicsSetViewport(0, 0, canvas[0]->texture.width, canvas[0]->texture.height);
+
+    GLenum buffers[MAX_CANVASES];
+    for (int i = 0; i < count; i++) {
+      buffers[i] = GL_COLOR_ATTACHMENT0 + i;
+      glFramebufferTexture2D(GL_FRAMEBUFFER, buffers[i], GL_TEXTURE_2D, canvas[i]->texture.id, 0);
+    }
+    glDrawBuffers(count, buffers);
+
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    lovrAssert(status != GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS, "All multicanvas canvases must have the same dimensions");
+    lovrAssert(status == GL_FRAMEBUFFER_COMPLETE, "Unable to bind framebuffer");
+  }
+
+  state.canvasCount = count;
+}
+
 Color lovrGraphicsGetColor() {
   return state.color;
 }
@@ -354,11 +422,12 @@ void lovrGraphicsSetDefaultFilter(TextureFilter filter) {
   state.defaultFilter = filter;
 }
 
-CompareMode lovrGraphicsGetDepthTest() {
-  return state.depthTest;
+void lovrGraphicsGetDepthTest(CompareMode* mode, bool* write) {
+  *mode = state.depthTest;
+  *write = state.depthWrite;
 }
 
-void lovrGraphicsSetDepthTest(CompareMode depthTest) {
+void lovrGraphicsSetDepthTest(CompareMode depthTest, bool write) {
   if (state.depthTest != depthTest) {
     state.depthTest = depthTest;
     if (depthTest != COMPARE_NONE) {
@@ -367,6 +436,11 @@ void lovrGraphicsSetDepthTest(CompareMode depthTest) {
     } else {
       glDisable(GL_DEPTH_TEST);
     }
+  }
+
+  if (state.depthWrite != write) {
+    state.depthWrite = write;
+    glDepthMask(write);
   }
 }
 
@@ -384,15 +458,9 @@ Font* lovrGraphicsGetFont() {
 }
 
 void lovrGraphicsSetFont(Font* font) {
-  if (state.font) {
-    lovrRelease(&state.font->ref);
-  }
-
+  lovrRetain(font);
+  lovrRelease(state.font);
   state.font = font;
-
-  if (font) {
-    lovrRetain(&state.font->ref);
-  }
 }
 
 bool lovrGraphicsIsGammaCorrect() {
@@ -442,15 +510,9 @@ Shader* lovrGraphicsGetShader() {
 
 void lovrGraphicsSetShader(Shader* shader) {
   if (shader != state.shader) {
-    if (state.shader) {
-      lovrRelease(&state.shader->ref);
-    }
-
+    lovrRetain(shader);
+    lovrRelease(state.shader);
     state.shader = shader;
-
-    if (shader) {
-      lovrRetain(&state.shader->ref);
-    }
   }
 }
 
@@ -495,8 +557,10 @@ Winding lovrGraphicsGetWinding() {
 }
 
 void lovrGraphicsSetWinding(Winding winding) {
-  state.winding = winding;
-  glFrontFace(winding);
+  if (winding != state.winding) {
+    state.winding = winding;
+    glFrontFace(winding);
+  }
 }
 
 bool lovrGraphicsIsWireframe() {
@@ -991,12 +1055,12 @@ void lovrGraphicsSphere(Material* material, mat4 transform, int segments) {
 }
 
 void lovrGraphicsSkybox(Texture* texture, float angle, float ax, float ay, float az) {
+  Winding winding = state.winding;
+
   lovrGraphicsPush();
   lovrGraphicsOrigin();
   lovrGraphicsRotate(MATRIX_MODEL, angle, ax, ay, az);
-  glDepthMask(GL_FALSE);
-  bool wasCulling = lovrGraphicsIsCullingEnabled();
-  lovrGraphicsSetCullingEnabled(false);
+  lovrGraphicsSetWinding(WINDING_COUNTERCLOCKWISE);
 
   if (texture->type == TEXTURE_CUBE) {
     float cube[] = {
@@ -1014,20 +1078,20 @@ void lovrGraphicsSkybox(Texture* texture, float angle, float ax, float ay, float
 
       // Back
       -1.f, -1.f, 1.f,
-      1.f, -1.f, 1.f,
       -1.f, 1.f, 1.f,
+      1.f, -1.f, 1.f,
       1.f, 1.f, 1.f,
 
       // Right
       1.f, 1.f, 1.f,
-      1.f, -1.f, 1.f,
       1.f, 1.f, -1.f,
+      1.f, -1.f, 1.f,
       1.f, -1.f, -1.f,
 
       // Bottom
       1.f, -1.f, -1.f,
-      1.f, -1.f, 1.f,
       -1.f, -1.f, -1.f,
+      1.f, -1.f, 1.f,
       -1.f, -1.f, 1.f,
 
       // Adjust
@@ -1036,8 +1100,8 @@ void lovrGraphicsSkybox(Texture* texture, float angle, float ax, float ay, float
 
       // Top
       -1.f, 1.f, -1.f,
-      -1.f, 1.f, 1.f,
       1.f, 1.f, -1.f,
+      -1.f, 1.f, 1.f,
       1.f, 1.f, 1.f
     };
 
@@ -1048,14 +1112,20 @@ void lovrGraphicsSkybox(Texture* texture, float angle, float ax, float ay, float
     lovrGraphicsDrawPrimitive(material, GL_TRIANGLE_STRIP, false, false, false);
     lovrMaterialSetTexture(material, TEXTURE_ENVIRONMENT_MAP, NULL);
   } else if (texture->type == TEXTURE_2D) {
+    CompareMode mode;
+    bool write;
+    lovrGraphicsGetDepthTest(&mode, &write);
+    lovrGraphicsSetDepthTest(COMPARE_LEQUAL, false);
     Material* material = lovrGraphicsGetDefaultMaterial();
     lovrMaterialSetTexture(material, TEXTURE_DIFFUSE, texture);
     lovrGraphicsSphere(material, NULL, 30);
     lovrMaterialSetTexture(material, TEXTURE_DIFFUSE, NULL);
+    lovrGraphicsSetDepthTest(mode, write);
+  } else {
+    lovrThrow("lovr.graphics.skybox only accepts 2d and cube Textures");
   }
 
-  lovrGraphicsSetCullingEnabled(wasCulling);
-  glDepthMask(GL_TRUE);
+  lovrGraphicsSetWinding(winding);
   lovrGraphicsPop();
 }
 
@@ -1072,16 +1142,22 @@ void lovrGraphicsPrint(const char* str, mat4 transform, float wrap, HorizontalAl
   lovrGraphicsSetDefaultShader(SHADER_FONT);
   Material* material = lovrGraphicsGetDefaultMaterial();
   lovrMaterialSetTexture(material, TEXTURE_DIFFUSE, font->texture);
-  glDepthMask(GL_FALSE);
+  CompareMode mode;
+  bool write;
+  lovrGraphicsGetDepthTest(&mode, &write);
+  lovrGraphicsSetDepthTest(mode, false);
   lovrGraphicsDrawPrimitive(NULL, GL_TRIANGLES, false, true, false);
-  glDepthMask(GL_TRUE);
+  lovrGraphicsSetDepthTest(mode, write);
   lovrMaterialSetTexture(material, TEXTURE_DIFFUSE, NULL);
   lovrGraphicsPop();
 }
 
 void lovrGraphicsStencil(StencilAction action, int replaceValue, StencilCallback callback, void* userdata) {
+  CompareMode mode;
+  bool write;
+  lovrGraphicsGetDepthTest(&mode, &write);
+  lovrGraphicsSetDepthTest(mode, false);
   glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-  glDepthMask(GL_FALSE);
 
   if (!state.stencilEnabled) {
     glEnable(GL_STENCIL_TEST);
@@ -1095,49 +1171,44 @@ void lovrGraphicsStencil(StencilAction action, int replaceValue, StencilCallback
   callback(userdata);
   state.stencilWriting = false;
 
-  glDepthMask(GL_TRUE);
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-
+  lovrGraphicsSetDepthTest(mode, write);
   lovrGraphicsSetStencilTest(state.stencilMode, state.stencilValue);
 }
 
 // Internal State
-void lovrGraphicsPushView() {
-  if (++state.view >= MAX_VIEWS) {
-    lovrThrow("View overflow");
+void lovrGraphicsPushDisplay(int framebuffer, mat4 projection, int* viewport) {
+  if (++state.display >= MAX_DISPLAYS) {
+    lovrThrow("Display overflow");
   }
 
-  memcpy(&state.views[state.view], &state.views[state.view - 1], sizeof(View));
+  state.displays[state.display].framebuffer = framebuffer;
+  memcpy(state.displays[state.display].projection, projection, 16 * sizeof(float));
+  memcpy(state.displays[state.display].viewport, viewport, 4 * sizeof(int));
+
+  if (state.canvasCount == 0) {
+    lovrGraphicsBindFramebuffer(framebuffer);
+    lovrGraphicsSetViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+  }
 }
 
-void lovrGraphicsPopView() {
-  if (--state.view < 0) {
-    lovrThrow("View underflow");
+void lovrGraphicsPopDisplay() {
+  if (--state.display < 0) {
+    lovrThrow("Display underflow");
   }
 
-  int* viewport = state.views[state.view].viewport;
-  lovrGraphicsSetViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
-  lovrGraphicsBindFramebuffer(state.views[state.view].framebuffer);
-}
-
-mat4 lovrGraphicsGetProjection() {
-  return state.views[state.view].projection;
-}
-
-void lovrGraphicsSetProjection(mat4 projection) {
-  memcpy(state.views[state.view].projection, projection, 16 * sizeof(float));
+  if (state.canvasCount == 0) {
+    lovrGraphicsBindFramebuffer(state.displays[state.display].framebuffer);
+    int* viewport = state.displays[state.display].viewport;
+    lovrGraphicsSetViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+  }
 }
 
 void lovrGraphicsSetViewport(int x, int y, int w, int h) {
-  state.views[state.view].viewport[0] = x;
-  state.views[state.view].viewport[1] = y;
-  state.views[state.view].viewport[2] = w;
-  state.views[state.view].viewport[3] = h;
   glViewport(x, y, w, h);
 }
 
 void lovrGraphicsBindFramebuffer(int framebuffer) {
-  state.views[state.view].framebuffer = framebuffer;
   glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
 }
 
@@ -1149,21 +1220,18 @@ void lovrGraphicsBindTexture(Texture* texture, TextureType type, int slot) {
   if (!texture) {
     if (!state.defaultTexture) {
       TextureData* textureData = lovrTextureDataGetBlank(1, 1, 0xff, FORMAT_RGBA);
-      state.defaultTexture = lovrTextureCreate(TEXTURE_2D, &textureData, 1, true);
+      state.defaultTexture = lovrTextureCreate(TEXTURE_2D, &textureData, 1, true, false);
     }
 
     texture = state.defaultTexture;
   }
 
   if (texture != state.textures[slot]) {
-    if (state.textures[slot]) {
-      lovrRelease(&state.textures[slot]->ref);
-    }
-
+    lovrRetain(texture);
+    lovrRelease(state.textures[slot]);
     state.textures[slot] = texture;
     glActiveTexture(GL_TEXTURE0 + slot);
     glBindTexture(type, texture->id);
-    lovrRetain(&texture->ref);
   }
 }
 

@@ -15,7 +15,7 @@ typedef struct {
 static HeadsetState state;
 
 static void onRequestAnimationFrame(void* userdata) {
-  lovrGraphicsClear(true, true, true);
+  lovrGraphicsClear(true, true, true, lovrGraphicsGetBackgroundColor(), 1., 0);
 
   int width = emscripten_vr_get_display_width();
   int height = emscripten_vr_get_display_height();
@@ -34,46 +34,42 @@ static void onRequestAnimationFrame(void* userdata) {
     mat4_set(transform, emscripten_vr_get_view_matrix(isRight));
     mat4_multiply(transform, sittingToStanding);
 
+    if (isRight) {
+      int viewport[4] = { width / 2, 0, width / 2, height };
+      lovrGraphicsPushDisplay(0, projection, viewport);
+    } else {
+      int viewport[4] = { 0, 0, width / 2, height };
+      lovrGraphicsPushDisplay(0, projection, viewport);
+    }
+
     lovrGraphicsPush();
     lovrGraphicsMatrixTransform(MATRIX_VIEW, transform);
     lovrGraphicsSetProjection(projection);
 
-    if (isRight) {
-      lovrGraphicsSetViewport(width / 2, 0, width / 2, height);
-    } else {
-      lovrGraphicsSetViewport(0, 0, width / 2, height);
-    }
-
     state.renderCallback(eye, userdata);
     lovrGraphicsPop();
+    lovrGraphicsPopDisplay();
   }
 }
 
-static bool webvrIsAvailable() {
-  return emscripten_vr_is_present();
-}
+static bool webvrInit() {
+  if (!emscripten_vr_is_present()) {
+    return false;
+  }
 
-static void webvrInit() {
   vec_init(&state.controllers);
   emscripten_vr_init();
+  return true;
 }
 
 static void webvrDestroy() {
   Controller* controller;
   int i;
   vec_foreach(&state.controllers, controller, i) {
-    lovrRelease(&controller->ref);
+    lovrRelease(controller);
   }
 
   vec_deinit(&state.controllers);
-}
-
-static void webvrPoll() {
-  //
-}
-
-static bool webvrIsPresent() {
-  return emscripten_vr_is_present();
 }
 
 static HeadsetType webvrGetType() {
@@ -82,6 +78,10 @@ static HeadsetType webvrGetType() {
 
 static HeadsetOrigin webvrGetOriginType() {
   return emscripten_vr_has_stage() ? ORIGIN_FLOOR : ORIGIN_HEAD;
+}
+
+static bool webvrIsMounted() {
+  return true;
 }
 
 static bool webvrIsMirrored() {
@@ -167,12 +167,12 @@ static vec_controller_t* webvrGetControllers() {
 
   while (state.controllers.length > controllerCount) {
     Controller* controller = vec_last(&state.controllers);
-    lovrRelease(&controller->ref);
+    lovrRelease(controller);
     vec_pop(&state.controllers);
   }
 
   while (state.controllers.length < controllerCount) {
-    Controller* controller = lovrAlloc(sizeof(Controller), lovrControllerDestroy);
+    Controller* controller = lovrAlloc(sizeof(Controller), free);
     controller->id = state.controllers.length;
     vec_push(&state.controllers, controller);
   }
@@ -180,7 +180,7 @@ static vec_controller_t* webvrGetControllers() {
   return &state.controllers;
 }
 
-static bool webvrControllerIsPresent(Controller* controller) {
+static bool webvrControllerIsConnected(Controller* controller) {
   return emscripten_vr_controller_is_present(controller->id);
 }
 
@@ -255,13 +255,11 @@ static void webvrUpdate(float dt) {
 
 HeadsetInterface lovrHeadsetWebVRDriver = {
   DRIVER_WEBVR,
-  webvrIsAvailable,
   webvrInit,
   webvrDestroy,
-  webvrPoll,
-  webvrIsPresent,
   webvrGetType,
   webvrGetOriginType,
+  webvrIsMounted,
   webvrIsMirrored,
   webvrSetMirrored,
   webvrGetDisplayDimensions,
@@ -274,7 +272,7 @@ HeadsetInterface lovrHeadsetWebVRDriver = {
   webvrGetVelocity,
   webvrGetAngularVelocity,
   webvrGetControllers,
-  webvrControllerIsPresent,
+  webvrControllerIsConnected,
   webvrControllerGetHand,
   webvrControllerGetPose,
   webvrControllerGetAxis,

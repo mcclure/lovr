@@ -36,7 +36,6 @@ int l_lovrHeadsetInit(lua_State* L) {
   map_set(&ControllerAxes, "touchy", CONTROLLER_AXIS_TOUCHPAD_Y);
 
   map_init(&ControllerButtons);
-  map_set(&ControllerButtons, "unknown", CONTROLLER_BUTTON_UNKNOWN);
   map_set(&ControllerButtons, "system", CONTROLLER_BUTTON_SYSTEM);
   map_set(&ControllerButtons, "menu", CONTROLLER_BUTTON_MENU);
   map_set(&ControllerButtons, "trigger", CONTROLLER_BUTTON_TRIGGER);
@@ -108,11 +107,6 @@ int l_lovrHeadsetInit(lua_State* L) {
   return 1;
 }
 
-int l_lovrHeadsetIsPresent(lua_State* L) {
-  lua_pushboolean(L, lovrHeadsetIsPresent());
-  return 1;
-}
-
 int l_lovrHeadsetGetDriver(lua_State* L) {
   const HeadsetDriver* driver = lovrHeadsetGetDriver();
   if (driver) {
@@ -130,6 +124,11 @@ int l_lovrHeadsetGetType(lua_State* L) {
 
 int l_lovrHeadsetGetOriginType(lua_State* L) {
   luax_pushenum(L, &HeadsetOrigins, lovrHeadsetGetOriginType());
+  return 1;
+}
+
+int l_lovrHeadsetIsMounted(lua_State* L) {
+  lua_pushboolean(L, lovrHeadsetIsMounted());
   return 1;
 }
 
@@ -167,17 +166,17 @@ int l_lovrHeadsetGetDisplayDimensions(lua_State* L) {
 }
 
 int l_lovrHeadsetGetClipDistance(lua_State* L) {
-  float near, far;
-  lovrHeadsetGetClipDistance(&near, &far);
-  lua_pushnumber(L, near);
-  lua_pushnumber(L, far);
+  float clipNear, clipFar;
+  lovrHeadsetGetClipDistance(&clipNear, &clipFar);
+  lua_pushnumber(L, clipNear);
+  lua_pushnumber(L, clipFar);
   return 2;
 }
 
 int l_lovrHeadsetSetClipDistance(lua_State* L) {
-  float near = luaL_checknumber(L, 1);
-  float far = luaL_checknumber(L, 2);
-  lovrHeadsetSetClipDistance(near, far);
+  float clipNear = luaL_checknumber(L, 1);
+  float clipFar = luaL_checknumber(L, 2);
+  lovrHeadsetSetClipDistance(clipNear, clipFar);
   return 0;
 }
 
@@ -303,10 +302,10 @@ int l_lovrHeadsetUpdate(lua_State* L) {
 }
 
 const luaL_Reg lovrHeadset[] = {
-  { "isPresent", l_lovrHeadsetIsPresent },
   { "getDriver", l_lovrHeadsetGetDriver },
   { "getType", l_lovrHeadsetGetType },
   { "getOriginType", l_lovrHeadsetGetOriginType },
+  { "isMounted", l_lovrHeadsetIsMounted },
   { "isMirrored", l_lovrHeadsetIsMirrored },
   { "setMirrored", l_lovrHeadsetSetMirrored },
   { "getDisplayWidth", l_lovrHeadsetGetDisplayWidth },

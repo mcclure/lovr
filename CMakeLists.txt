@@ -220,13 +220,16 @@ set(LOVR_SRC
   src/api/filesystem.c
   src/api/graphics.c
   src/api/headset.c
+  src/api/lovr.c
   src/api/math.c
   src/api/physics.c
+  src/api/thread.c
   src/api/timer.c
   src/api/types/animator.c
   src/api/types/audioStream.c
   src/api/types/blob.c
   src/api/types/canvas.c
+  src/api/types/channel.c
   src/api/types/collider.c
   src/api/types/controller.c
   src/api/types/font.c
@@ -242,17 +245,20 @@ set(LOVR_SRC
   src/api/types/source.c
   src/api/types/texture.c
   src/api/types/textureData.c
+  src/api/types/thread.c
   src/api/types/transform.c
+  src/api/types/vertexData.c
   src/api/types/world.c
   src/audio/audio.c
   src/audio/source.c
   src/data/audioStream.c
+  src/data/blob.c
   src/data/data.c
-  src/data/model.c
+  src/data/modelData.c
   src/data/rasterizer.c
-  src/data/texture.c
+  src/data/textureData.c
+  src/data/vertexData.c
   src/event/event.c
-  src/filesystem/blob.c
   src/filesystem/file.c
   src/filesystem/filesystem.c
   src/graphics/animator.c
@@ -266,7 +272,6 @@ set(LOVR_SRC
   src/graphics/texture.c
   src/headset/fake.c
   src/headset/headset.c
-  src/lib/vertex.c
   src/lib/glad/glad.c
   src/lib/lua-cjson/fpconv.c
   src/lib/lua-cjson/lua_cjson.c
@@ -274,7 +279,10 @@ set(LOVR_SRC
   src/lib/lua-enet/enet.c
   src/lib/map/map.c
   src/lib/stb/stb_image.c
+  src/lib/stb/stb_image_write.c
   src/lib/stb/stb_vorbis.c
+  src/lib/tinycthread/tinycthread.c
+  src/lib/tinycthread/tinycthread.h
   src/lib/vec/vec.c
   src/lovr.c
   src/luax.c
@@ -287,6 +295,8 @@ set(LOVR_SRC
   src/math/vec3.c
   src/physics/physics.c
   src/resources/shaders.c
+  src/thread/channel.c
+  src/thread/thread.c
   src/timer/timer.c
   src/util.c
 )

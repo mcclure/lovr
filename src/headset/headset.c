@@ -1,15 +1,14 @@
 #include "headset/headset.h"
 #include "event/event.h"
 
-void lovrControllerDestroy(const Ref* ref) {
-  Controller* controller = containerof(ref, Controller);
-  free(controller);
-}
-
 static HeadsetInterface* headset = NULL;
-static bool headsetAlreadyInit = false;
+static bool initialized = false;
 
 void lovrHeadsetInit(HeadsetDriver* drivers, int count) {
+  if (initialized) return;
+  initialized = true;
+  headset = NULL;
+
   for (int i = 0; i < count; i++) {
     HeadsetInterface* interface = NULL;
 
@@ -23,20 +22,17 @@ void lovrHeadsetInit(HeadsetDriver* drivers, int count) {
       default: break;
     }
 
-    if (interface && interface->isAvailable()) {
+    if (interface && interface->init()) {
       headset = interface;
       break;
     }
   }
-
-  if (!headsetAlreadyInit && headset) {
-    headset->init();
-    atexit(lovrHeadsetDestroy);
-    headsetAlreadyInit = true;
-  }
 }
 
 void lovrHeadsetDestroy() {
+  if (!initialized) return;
+  initialized = false;
+
   if (headset) {
     headset->destroy();
     headset = NULL;
@@ -51,20 +47,16 @@ const HeadsetDriver* lovrHeadsetGetDriver() {
   return &headset->driverType;
 }
 
-void lovrHeadsetPoll() {
-  headset->poll();
-}
-
-bool lovrHeadsetIsPresent() {
-  return headset ? headset->isPresent() : false;
-}
-
 HeadsetType lovrHeadsetGetType() {
   return headset ? headset->getType() : HEADSET_UNKNOWN;
 }
 
 HeadsetOrigin lovrHeadsetGetOriginType() {
   return headset ? headset->getOriginType() : ORIGIN_HEAD;
+}
+
+bool lovrHeadsetIsMounted() {
+  return headset ? headset->isMounted() : false;
 }
 
 bool lovrHeadsetIsMirrored() {
@@ -86,17 +78,17 @@ void lovrHeadsetGetDisplayDimensions(int* width, int* height) {
   headset->getDisplayDimensions(width, height);
 }
 
-void lovrHeadsetGetClipDistance(float* near, float* far) {
+void lovrHeadsetGetClipDistance(float* clipNear, float* clipFar) {
   if (!headset) {
-    *near = *far = 0.f;
+    *clipNear = *clipFar = 0.f;
     return;
   }
-  headset->getClipDistance(near, far);
+  headset->getClipDistance(clipNear, clipFar);
 }
 
-void lovrHeadsetSetClipDistance(float near, float far) {
+void lovrHeadsetSetClipDistance(float clipNear, float clipFar) {
   if (headset) {
-    headset->setClipDistance(near, far);
+    headset->setClipDistance(clipNear, clipFar);
   }
 }
 
@@ -152,12 +144,12 @@ vec_controller_t* lovrHeadsetGetControllers() {
   return headset->getControllers();
 }
 
-bool lovrHeadsetControllerIsPresent(Controller* controller) {
+bool lovrHeadsetControllerIsConnected(Controller* controller) {
   if (!headset || !controller) {
     return false;
   }
 
-  return headset->controllerIsPresent(controller);
+  return headset->controllerIsConnected(controller);
 }
 
 ControllerHand lovrHeadsetControllerGetHand(Controller* controller) {
@@ -216,7 +208,7 @@ void lovrHeadsetRenderTo(headsetRenderCallback callback, void* userdata) {
 }
 
 void lovrHeadsetUpdate(float dt) {
-  if (headset) {
+  if (headset && headset->update) {
     headset->update(dt);
   }
 }

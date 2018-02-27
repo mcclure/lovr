@@ -23,6 +23,14 @@ int l_lovrAudioUpdate(lua_State* L) {
   return 0;
 }
 
+int l_lovrAudioGetDopplerEffect(lua_State* L) {
+  float factor, speedOfSound;
+  lovrAudioGetDopplerEffect(&factor, &speedOfSound);
+  lua_pushnumber(L, factor);
+  lua_pushnumber(L, speedOfSound);
+  return 2;
+}
+
 int l_lovrAudioGetOrientation(lua_State* L) {
   float angle, ax, ay, az;
   lovrAudioGetOrientation(&angle, &ax, &ay, &az);
@@ -68,10 +76,8 @@ int l_lovrAudioNewSource(lua_State* L) {
     stream = *type;
   } else {
     Blob* blob = luax_readblob(L, 1, "Source");
-    if (!blob) // readblob responsible for setting Lua error
-      return 0;
     stream = lovrAudioStreamCreate(blob, 4096);
-    lovrRelease(&blob->ref);
+    lovrRelease(blob);
     if (!stream) {
       luaL_error(L, "Could not decode Ogg audio source at '%s'", luaL_checkstring(L, 1));
       return 0;
@@ -80,7 +86,7 @@ int l_lovrAudioNewSource(lua_State* L) {
 
   Source* source = lovrSourceCreate(stream);
   luax_pushtype(L, Source, source);
-  lovrRelease(&source->ref);
+  lovrRelease(source);
   return 1;
 }
 
@@ -96,6 +102,13 @@ int l_lovrAudioResume(lua_State* L) {
 
 int l_lovrAudioRewind(lua_State* L) {
   lovrAudioRewind();
+  return 0;
+}
+
+int l_lovrAudioSetDopplerEffect(lua_State* L) {
+  float factor = luaL_optnumber(L, 1, 1.);
+  float speedOfSound = luaL_optnumber(L, 2, 343.29);
+  lovrAudioSetDopplerEffect(factor, speedOfSound);
   return 0;
 }
 
@@ -137,6 +150,7 @@ int l_lovrAudioStop(lua_State* L) {
 
 const luaL_Reg lovrAudio[] = {
   { "update", l_lovrAudioUpdate },
+  { "getDopplerEffect", l_lovrAudioGetDopplerEffect },
   { "getOrientation", l_lovrAudioGetOrientation },
   { "getPosition", l_lovrAudioGetPosition },
   { "getVelocity", l_lovrAudioGetVelocity },
@@ -146,6 +160,7 @@ const luaL_Reg lovrAudio[] = {
   { "pause", l_lovrAudioPause },
   { "resume", l_lovrAudioResume },
   { "rewind", l_lovrAudioRewind },
+  { "setDopplerEffect", l_lovrAudioSetDopplerEffect },
   { "setOrientation", l_lovrAudioSetOrientation },
   { "setPosition", l_lovrAudioSetPosition },
   { "setVelocity", l_lovrAudioSetVelocity },

@@ -1,4 +1,4 @@
-#include "data/model.h"
+#include "data/modelData.h"
 #include "lib/vec/vec.h"
 #include "util.h"
 #include <stdbool.h>
@@ -66,13 +66,11 @@ typedef void (*headsetRenderCallback)(HeadsetEye eye, void* userdata);
 
 typedef struct {
   HeadsetDriver driverType;
-  bool (*isAvailable)();
-  void (*init)();
+  bool (*init)();
   void (*destroy)();
-  void (*poll)();
-  bool (*isPresent)();
   HeadsetType (*getType)();
   HeadsetOrigin (*getOriginType)();
+  bool (*isMounted)();
   bool (*isMirrored)();
   void (*setMirrored)(bool mirror);
   void (*getDisplayDimensions)(int* width, int* height);
@@ -85,7 +83,7 @@ typedef struct {
   void (*getVelocity)(float* x, float* y, float* z);
   void (*getAngularVelocity)(float* x, float* y, float* z);
   vec_controller_t* (*getControllers)();
-  bool (*controllerIsPresent)(Controller* controller);
+  bool (*controllerIsConnected)(Controller* controller);
   ControllerHand (*controllerGetHand)(Controller* controller);
   void (*controllerGetPose)(Controller* controller, float* x, float* y, float* z, float* angle, float* ax, float* ay, float* az);
   float (*controllerGetAxis)(Controller* controller, ControllerAxis axis);
@@ -104,11 +102,10 @@ extern HeadsetInterface lovrHeadsetFakeDriver;
 
 void lovrHeadsetInit(HeadsetDriver* drivers, int count);
 void lovrHeadsetDestroy();
-void lovrHeadsetPoll();
 const HeadsetDriver* lovrHeadsetGetDriver();
-bool lovrHeadsetIsPresent();
 HeadsetType lovrHeadsetGetType();
 HeadsetOrigin lovrHeadsetGetOriginType();
+bool lovrHeadsetIsMounted();
 bool lovrHeadsetIsMirrored();
 void lovrHeadsetSetMirrored(bool mirror);
 void lovrHeadsetGetDisplayDimensions(int* width, int* height);
@@ -121,7 +118,7 @@ void lovrHeadsetGetEyePose(HeadsetEye eye, float* x, float* y, float* z, float* 
 void lovrHeadsetGetVelocity(float* x, float* y, float* z);
 void lovrHeadsetGetAngularVelocity(float* x, float* y, float* z);
 vec_controller_t* lovrHeadsetGetControllers();
-bool lovrHeadsetControllerIsPresent(Controller* controller);
+bool lovrHeadsetControllerIsConnected(Controller* controller);
 ControllerHand lovrHeadsetControllerGetHand(Controller* controller);
 void lovrHeadsetControllerGetPose(Controller* controller, float* x, float* y, float* z, float* angle, float* ax, float* ay, float* az);
 float lovrHeadsetControllerGetAxis(Controller* controller, ControllerAxis axis);
@@ -131,5 +128,3 @@ void lovrHeadsetControllerVibrate(Controller* controller, float duration, float 
 ModelData* lovrHeadsetControllerNewModelData(Controller* controller);
 void lovrHeadsetRenderTo(headsetRenderCallback callback, void* userdata);
 void lovrHeadsetUpdate(float dt);
-
-void lovrControllerDestroy(const Ref* ref);

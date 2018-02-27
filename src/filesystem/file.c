@@ -11,8 +11,8 @@ File* lovrFileCreate(const char* path) {
   return file;
 }
 
-void lovrFileDestroy(const Ref* ref) {
-  File* file = containerof(ref, File);
+void lovrFileDestroy(void* ref) {
+  File* file = ref;
   if (file->handle) {
     PHYSFS_close(file->handle);
   }

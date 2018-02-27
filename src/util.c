@@ -10,8 +10,8 @@
 
 #define MAX_ERROR_LENGTH 1024
 
-char lovrErrorMessage[MAX_ERROR_LENGTH];
-jmp_buf* lovrCatch = NULL;
+_Thread_local char lovrErrorMessage[MAX_ERROR_LENGTH];
+_Thread_local jmp_buf* lovrCatch = NULL;
 
 void lovrThrow(const char* format, ...) {
   va_list args;
@@ -34,19 +34,20 @@ void lovrSleep(double seconds) {
 #endif
 }
 
-void* lovrAlloc(size_t size, void (*destructor)(const Ref* ref)) {
+void* lovrAlloc(size_t size, void (*destructor)(void* object)) {
   void* object = malloc(size);
   if (!object) return NULL;
   *((Ref*) object) = (Ref) { destructor, 1 };
   return object;
 }
 
-void lovrRetain(const Ref* ref) {
-  ((Ref*) ref)->count++;
+void lovrRetain(void* object) {
+  if (object) ((Ref*) object)->count++;
 }
 
-void lovrRelease(const Ref* ref) {
-  if (--((Ref*) ref)->count == 0 && ref->free) ref->free(ref);
+void lovrRelease(void* object) {
+  Ref* ref = object;
+  if (ref && --ref->count == 0) ref->free(object);
 }
 
 // https://github.com/starwing/luautf8

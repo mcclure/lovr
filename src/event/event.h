@@ -1,4 +1,5 @@
 #include "headset/headset.h"
+#include "thread/thread.h"
 #include "lib/vec/vec.h"
 #include <stdbool.h>
 
@@ -7,6 +8,8 @@
 typedef enum {
   EVENT_QUIT,
   EVENT_FOCUS,
+  EVENT_MOUNT,
+  EVENT_THREAD_ERROR,
   EVENT_CONTROLLER_ADDED,
   EVENT_CONTROLLER_REMOVED,
   EVENT_CONTROLLER_PRESSED,
@@ -19,8 +22,17 @@ typedef struct {
 } QuitEvent;
 
 typedef struct {
-  bool isFocused;
+  bool focused;
 } FocusEvent;
+
+typedef struct {
+  bool mounted;
+} MountEvent;
+
+typedef struct {
+  Thread* thread;
+  const char* error;
+} ThreadErrorEvent;
 
 typedef struct {
   Controller* controller;
@@ -43,6 +55,8 @@ typedef struct {
 typedef union {
   QuitEvent quit;
   FocusEvent focus;
+  MountEvent mount;
+  ThreadErrorEvent threaderror;
   ControllerAddedEvent controlleradded;
   ControllerRemovedEvent controllerremoved;
   ControllerPressedEvent controllerpressed;
@@ -60,13 +74,15 @@ typedef vec_t(EventPump) vec_pump_t;
 typedef vec_t(Event) vec_event_t;
 
 typedef struct {
+  bool initialized;
   vec_pump_t pumps;
   vec_event_t events;
 } EventState;
 
 void lovrEventInit();
 void lovrEventDestroy();
-void lovrEventAddPump(void (*pump)(void));
+void lovrEventAddPump(EventPump pump);
+void lovrEventRemovePump(EventPump pump);
 void lovrEventPump();
 void lovrEventPush(Event event);
 bool lovrEventPoll(Event* event);

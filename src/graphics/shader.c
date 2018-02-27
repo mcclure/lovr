@@ -25,7 +25,9 @@ static UniformType getUniformType(GLenum type, const char* debug) {
       return UNIFORM_MATRIX;
 
     case GL_SAMPLER_2D:
+    case GL_SAMPLER_3D:
     case GL_SAMPLER_CUBE:
+    case GL_SAMPLER_2D_ARRAY:
       return UNIFORM_SAMPLER;
 
     default:
@@ -39,7 +41,9 @@ static int getUniformComponents(GLenum type) {
     case GL_FLOAT:
     case GL_INT:
     case GL_SAMPLER_2D:
+    case GL_SAMPLER_3D:
     case GL_SAMPLER_CUBE:
+    case GL_SAMPLER_2D_ARRAY:
       return 1;
 
     case GL_FLOAT_VEC2:
@@ -97,6 +101,7 @@ static GLuint linkShaders(GLuint vertexShader, GLuint fragmentShader) {
   glBindAttribLocation(program, LOVR_SHADER_NORMAL, "lovrNormal");
   glBindAttribLocation(program, LOVR_SHADER_TEX_COORD, "lovrTexCoord");
   glBindAttribLocation(program, LOVR_SHADER_VERTEX_COLOR, "lovrVertexColor");
+  glBindAttribLocation(program, LOVR_SHADER_TANGENT, "lovrTangent");
   glBindAttribLocation(program, LOVR_SHADER_BONES, "lovrBones");
   glBindAttribLocation(program, LOVR_SHADER_BONE_WEIGHTS, "lovrBoneWeights");
   glLinkProgram(program);
@@ -253,8 +258,8 @@ Shader* lovrShaderCreateDefault(DefaultShader type) {
   }
 }
 
-void lovrShaderDestroy(const Ref* ref) {
-  Shader* shader = containerof(ref, Shader);
+void lovrShaderDestroy(void* ref) {
+  Shader* shader = ref;
   glDeleteProgram(shader->program);
   map_deinit(&shader->uniforms);
   free(shader);
@@ -303,7 +308,13 @@ void lovrShaderBind(Shader* shader) {
 
       case UNIFORM_SAMPLER:
         for (int i = 0; i < count; i++) {
-          TextureType type = uniform->glType == GL_SAMPLER_2D ? TEXTURE_2D : TEXTURE_CUBE;
+          TextureType type;
+          switch (uniform->glType) {
+            case GL_SAMPLER_2D: type = TEXTURE_2D; break;
+            case GL_SAMPLER_3D: type = TEXTURE_VOLUME; break;
+            case GL_SAMPLER_CUBE: type = TEXTURE_CUBE; break;
+            case GL_SAMPLER_2D_ARRAY: type = TEXTURE_ARRAY; break;
+          }
           lovrGraphicsBindTexture(uniform->value.textures[i], type, uniform->baseTextureSlot + i);
         }
         break;

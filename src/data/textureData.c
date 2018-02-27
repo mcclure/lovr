@@ -1,7 +1,9 @@
-#include "data/texture.h"
+#include "data/textureData.h"
+#include "filesystem/file.h"
 #include "math/math.h"
 #include "lib/dds.h"
 #include "lib/stb/stb_image.h"
+#include "lib/stb/stb_image_write.h"
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
@@ -126,6 +128,7 @@ TextureData* lovrTextureDataGetBlank(int width, int height, uint8_t value, Textu
     default: lovrThrow("Unable to create a blank compressed texture");
   }
 
+  lovrAssert(width > 0 && height > 0, "TextureData dimensions must be positive");
   size_t size = width * height * pixelSize;
   textureData->width = width;
   textureData->height = height;
@@ -133,7 +136,6 @@ TextureData* lovrTextureDataGetBlank(int width, int height, uint8_t value, Textu
   textureData->data = memset(malloc(size), value, size);
   textureData->blob = NULL;
   vec_init(&textureData->mipmaps);
-  textureData->generateMipmaps = false;
   return textureData;
 }
 
@@ -141,13 +143,13 @@ TextureData* lovrTextureDataGetEmpty(int width, int height, TextureFormat format
   TextureData* textureData = lovrAlloc(sizeof(TextureData), lovrTextureDataDestroy);
   if (!textureData) return NULL;
 
+  lovrAssert(width > 0 && height > 0, "TextureData dimensions must be positive");
   textureData->width = width;
   textureData->height = height;
   textureData->format = format;
   textureData->data = NULL;
   textureData->blob = NULL;
   vec_init(&textureData->mipmaps);
-  textureData->generateMipmaps = false;
   return textureData;
 }
 
@@ -159,7 +161,7 @@ TextureData* lovrTextureDataFromBlob(Blob* blob) {
 
   if (!parseDDS(blob->data, blob->size, textureData)) {
     textureData->blob = blob;
-    lovrRetain(&blob->ref);
+    lovrRetain(blob);
     return textureData;
   }
 
@@ -167,7 +169,6 @@ TextureData* lovrTextureDataFromBlob(Blob* blob) {
   textureData->format = FORMAT_RGBA;
   textureData->data = stbi_load_from_memory(blob->data, blob->size, &textureData->width, &textureData->height, NULL, 4);
   textureData->blob = NULL;
-  textureData->generateMipmaps = true;
 
   if (!textureData->data) {
     lovrThrow("Could not load texture data from '%s'", blob->name);
@@ -178,11 +179,57 @@ TextureData* lovrTextureDataFromBlob(Blob* blob) {
   return textureData;
 }
 
-void lovrTextureDataDestroy(const Ref* ref) {
-  TextureData* textureData = containerof(ref, TextureData);
-  if (textureData->blob) {
-    lovrRelease(&textureData->blob->ref);
+Color lovrTextureDataGetPixel(TextureData* textureData, int x, int y) {
+  if (!textureData->data || textureData->format != FORMAT_RGBA) {
+    return (Color) { 0, 0, 0, 0 };
   }
+
+  bool inside = x >= 0 && y >= 0 && x <= (textureData->width - 1) && y <= (textureData->height - 1);
+  lovrAssert(inside, "getPixel coordinates must be in TextureData bounds");
+  size_t offset = 4 * ((textureData->height - (y + 1)) * textureData->width + x);
+  uint8_t* data = (uint8_t*) textureData->data + offset;
+  return (Color) { data[0] / 255.f, data[1] / 255.f, data[2] / 255.f, data[3] / 255.f };
+}
+
+void lovrTextureDataSetPixel(TextureData* textureData, int x, int y, Color color) {
+  if (!textureData->data || textureData->format != FORMAT_RGBA) {
+    return;
+  }
+
+  bool inside = x >= 0 && y >= 0 && x <= (textureData->width - 1) && y <= (textureData->height - 1);
+  lovrAssert(inside, "setPixel coordinates must be in TextureData bounds");
+  size_t offset = 4 * ((textureData->height - (y + 1)) * textureData->width + x);
+  uint8_t* data = (uint8_t*) textureData->data + offset;
+  data[0] = (uint8_t) (color.r * 255.f + .5);
+  data[1] = (uint8_t) (color.g * 255.f + .5);
+  data[2] = (uint8_t) (color.b * 255.f + .5);
+  data[3] = (uint8_t) (color.a * 255.f + .5);
+}
+
+static void writeCallback(void* context, void* data, int size) {
+  File* file = context;
+  lovrFileWrite(file, data, size);
+}
+
+bool lovrTextureDataEncode(TextureData* textureData, const char* filename) {
+  File* file = NULL;
+  if ((file = lovrFileCreate(filename)) == NULL || lovrFileOpen(file, OPEN_WRITE)) {
+    return false;
+  }
+  lovrAssert(textureData->format == FORMAT_RGB || textureData->format == FORMAT_RGBA, "Only RGB and RGBA TextureData can be encoded");
+  int components = textureData->format == FORMAT_RGB ? 3 : 4;
+  int width = textureData->width;
+  int height = textureData->height;
+  void* data = (uint8_t*) textureData->data + (textureData->height - 1) * textureData->width * components;
+  size_t stride = -textureData->width * components;
+  bool success = stbi_write_png_to_func(writeCallback, file, width, height, components, data, stride);
+  lovrFileClose(file);
+  return success;
+}
+
+void lovrTextureDataDestroy(void* ref) {
+  TextureData* textureData = ref;
+  lovrRelease(textureData->blob);
   vec_deinit(&textureData->mipmaps);
   free(textureData->data);
   free(textureData);

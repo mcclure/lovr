@@ -1,11 +1,11 @@
 #include "api.h"
 #include "headset/headset.h"
-#include "data/model.h"
+#include "data/modelData.h"
 #include "graphics/model.h"
 
-int l_lovrControllerIsPresent(lua_State* L) {
+int l_lovrControllerIsConnected(lua_State* L) {
   Controller* controller = luax_checktype(L, 1, Controller);
-  lua_pushboolean(L, lovrHeadsetControllerIsPresent(controller));
+  lua_pushboolean(L, lovrHeadsetControllerIsConnected(controller));
   return 1;
 }
 
@@ -86,7 +86,7 @@ int l_lovrControllerNewModel(lua_State* L) {
   if (modelData) {
     Model* model = lovrModelCreate(modelData);
     luax_pushtype(L, Model, model);
-    lovrRelease(&model->ref);
+    lovrRelease(model);
   } else {
     lua_pushnil(L);
   }
@@ -94,7 +94,7 @@ int l_lovrControllerNewModel(lua_State* L) {
 }
 
 const luaL_Reg lovrController[] = {
-  { "isPresent", l_lovrControllerIsPresent },
+  { "isConnected", l_lovrControllerIsConnected },
   { "getHand", l_lovrControllerGetHand },
   { "getPose", l_lovrControllerGetPose },
   { "getPosition", l_lovrControllerGetPosition },

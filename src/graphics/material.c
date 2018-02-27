@@ -7,6 +7,10 @@ Material* lovrMaterialCreate(bool isDefault) {
 
   material->isDefault = isDefault;
 
+  for (int i = 0; i < MAX_MATERIAL_SCALARS; i++) {
+    material->scalars[i] = 1.f;
+  }
+
   for (int i = 0; i < MAX_MATERIAL_COLORS; i++) {
     material->colors[i] = (Color) { 1, 1, 1, 1 };
   }
@@ -18,14 +22,20 @@ Material* lovrMaterialCreate(bool isDefault) {
   return material;
 }
 
-void lovrMaterialDestroy(const Ref* ref) {
-  Material* material = containerof(ref, Material);
+void lovrMaterialDestroy(void* ref) {
+  Material* material = ref;
   for (int i = 0; i < MAX_MATERIAL_TEXTURES; i++) {
-    if (material->textures[i]) {
-      lovrRelease(&material->textures[i]->ref);
-    }
+    lovrRelease(material->textures[i]);
   }
   free(material);
+}
+
+float lovrMaterialGetScalar(Material* material, MaterialScalar scalarType) {
+  return material->scalars[scalarType];
+}
+
+void lovrMaterialSetScalar(Material* material, MaterialScalar scalarType, float value) {
+  material->scalars[scalarType] = value;
 }
 
 Color lovrMaterialGetColor(Material* material, MaterialColor colorType) {
@@ -42,14 +52,8 @@ Texture* lovrMaterialGetTexture(Material* material, MaterialTexture textureType)
 
 void lovrMaterialSetTexture(Material* material, MaterialTexture textureType, Texture* texture) {
   if (texture != material->textures[textureType]) {
-    if (material->textures[textureType]) {
-      lovrRelease(&material->textures[textureType]->ref);
-    }
-
+    lovrRetain(texture);
+    lovrRelease(material->textures[textureType]);
     material->textures[textureType] = texture;
-
-    if (texture) {
-      lovrRetain(&texture->ref);
-    }
   }
 }

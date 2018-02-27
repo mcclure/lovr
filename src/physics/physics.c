@@ -1,6 +1,7 @@
 #include "physics.h"
 #include "math/quat.h"
 #include <stdlib.h>
+#include <stdbool.h>
 
 static void defaultNearCallback(void* data, dGeomID a, dGeomID b) {
   lovrWorldCollide((World*) data, dGeomGetData(a), dGeomGetData(b), -1, -1);
@@ -28,19 +29,18 @@ static void raycastCallback(void* data, dGeomID a, dGeomID b) {
   }
 }
 
-static bool odeAlreadyInit = false;
+static bool initialized = false;
 
 void lovrPhysicsInit() {
-  if (odeAlreadyInit)
-    return;
-
+  if (initialized) return;
   dInitODE();
-  atexit(lovrPhysicsDestroy);
-  odeAlreadyInit = true;
+  initialized = true;
 }
 
 void lovrPhysicsDestroy() {
+  if (!initialized) return;
   dCloseODE();
+  initialized = false;
 }
 
 World* lovrWorldCreate(float xg, float yg, float zg, bool allowSleep, const char** tags, int tagCount) {
@@ -66,8 +66,8 @@ World* lovrWorldCreate(float xg, float yg, float zg, bool allowSleep, const char
   return world;
 }
 
-void lovrWorldDestroy(const Ref* ref) {
-  World* world = containerof(ref, World);
+void lovrWorldDestroy(void* ref) {
+  World* world = ref;
   lovrWorldDestroyData(world);
   vec_deinit(&world->overlaps);
   free(world);
@@ -285,8 +285,8 @@ Collider* lovrColliderCreate(World* world, float x, float y, float z) {
   return collider;
 }
 
-void lovrColliderDestroy(const Ref* ref) {
-  Collider* collider = containerof(ref, Collider);
+void lovrColliderDestroy(void* ref) {
+  Collider* collider = ref;
   vec_deinit(&collider->shapes);
   vec_deinit(&collider->joints);
   lovrColliderDestroyData(collider);
@@ -628,8 +628,8 @@ void lovrColliderGetAABB(Collider* collider, float aabb[6]) {
   }
 }
 
-void lovrShapeDestroy(const Ref* ref) {
-  Shape* shape = containerof(ref, Shape);
+void lovrShapeDestroy(void* ref) {
+  Shape* shape = ref;
   lovrShapeDestroyData(shape);
   free(shape);
 }
@@ -855,8 +855,8 @@ void lovrCylinderShapeSetLength(CylinderShape* cylinder, float length) {
   dGeomCylinderSetParams(cylinder->id, lovrCylinderShapeGetRadius(cylinder), length);
 }
 
-void lovrJointDestroy(const Ref* ref) {
-  Joint* joint = containerof(ref, Joint);
+void lovrJointDestroy(void* ref) {
+  Joint* joint = ref;
   lovrJointDestroyData(joint);
   free(joint);
 }
