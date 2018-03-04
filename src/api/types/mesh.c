@@ -233,7 +233,7 @@ int l_lovrMeshAttachAttributes(lua_State* L) {
   Mesh* attachTo = luax_checktype(L, 1, Mesh);
   Mesh* attachThis = luax_checktype(L, 2, Mesh);
   int instanceDivisor = luaL_optnumber(L, 3, 0);
-  // TODO: Check attribute name(s) in 4th argument
+  // TODO: Check attribute name(s) in 4th argument and if present only attach those
 
   VertexFormat* format = &attachThis->vertexData->format;
   for(int c = 0; c < format->count; c++) {

@@ -4,12 +4,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-static void lovrMeshBindAttribute(Shader* shader, Mesh *mesh, VertexFormat *format, int i, int divisor) {
+static void lovrMeshBindAttribute(Shader* shader, Mesh *mesh, VertexFormat *format, int i, bool enabled, int divisor) {
   Attribute attribute = format->attributes[i];
   int location = lovrShaderGetAttributeId(shader, attribute.name);
 
   if (location >= 0) {
-    if (mesh->enabledAttributes & (1 << i)) {
+    if (enabled) {
       glEnableVertexAttribArray(location);
 
       GLenum glType;
@@ -18,6 +18,10 @@ static void lovrMeshBindAttribute(Shader* shader, Mesh *mesh, VertexFormat *form
         case ATTR_BYTE: glType = GL_UNSIGNED_BYTE; break;
         case ATTR_INT: glType = GL_UNSIGNED_INT; break;
       }
+
+      // Divisor lives in the VAO and the VAO is per-mesh, so the only reason we would need to set a zero divisor for an attribute is if a nonzero divisor attribute is attached then disabled, and a zero divisor attribute is enabled afterward in its place. Nonzero attachments length is used to determine there is a risk this has happened.
+      if (divisor || mesh->attachments.length)
+        glVertexAttribDivisor(location, divisor);
 
       if (attribute.type == ATTR_INT) {
         glVertexAttribIPointer(location, attribute.count, glType, format->stride, (void*) attribute.offset);
@@ -40,13 +44,15 @@ static void lovrMeshBindAttributes(Mesh* mesh) {
 
   VertexFormat* format = &mesh->vertexData->format;
   for (int i = 0; i < format->count; i++) {
-    lovrMeshBindAttribute(shader, mesh, format, i, 0);
+    lovrMeshBindAttribute(shader, mesh, format, i, mesh->enabledAttributes & (1 << i), 0);
   }
 
   {
     int i; MeshAttachment attachment;
     vec_foreach(&mesh->attachments, attachment, i) {
-      lovrMeshBindAttribute(shader, attachment.mesh, &attachment.mesh->vertexData->format, attachment.attribute, attachment.instanceDivisor);
+      lovrGraphicsBindVertexBuffer(attachment.mesh->vbo);
+      // TODO: Allow disabling of attached attributes?
+      lovrMeshBindAttribute(shader, attachment.mesh, &attachment.mesh->vertexData->format, attachment.attribute, true, attachment.instanceDivisor);
     }
   }
 
