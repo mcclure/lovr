@@ -40,6 +40,12 @@ int l_lovrMeshGetVertexCount(lua_State* L) {
   return 1;
 }
 
+int l_lovrMeshGetVertexData(lua_State* L) {
+  Mesh* mesh = luax_checktype(L, 1, Mesh);
+  luax_pushtype(L, VertexData, mesh->vertexData);
+  return 1;
+}
+
 int l_lovrMeshGetVertex(lua_State* L) {
   Mesh* mesh = luax_checktype(L, 1, Mesh);
   int index = luaL_checkint(L, 2) - 1;
@@ -250,6 +256,7 @@ const luaL_Reg lovrMesh[] = {
   { "getVertexCount", l_lovrMeshGetVertexCount },
   { "getVertex", l_lovrMeshGetVertex },
   { "setVertex", l_lovrMeshSetVertex },
+  { "getVertexData", l_lovrMeshGetVertexData },
   { "getVertexAttribute", l_lovrMeshGetVertexAttribute },
   { "setVertexAttribute", l_lovrMeshSetVertexAttribute },
   { "setVertices", l_lovrMeshSetVertices },
