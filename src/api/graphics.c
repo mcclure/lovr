@@ -27,7 +27,6 @@ map_int_t MaterialTextures;
 map_int_t MatrixTypes;
 map_int_t MeshDrawModes;
 map_int_t MeshUsages;
-map_int_t SampleFilters;
 map_int_t StencilActions;
 map_int_t TextureFormats;
 map_int_t TextureTypes;
@@ -205,11 +204,6 @@ int l_lovrGraphicsInit(lua_State* L) {
   map_set(&TextureFormats, "dxt1", FORMAT_DXT1);
   map_set(&TextureFormats, "dxt3", FORMAT_DXT3);
   map_set(&TextureFormats, "dxt5", FORMAT_DXT5);
-
-  map_init(&SampleFilters);
-  map_set(&SampleFilters, "weightedaverage", SAMPLE_FILTER_WEIGHTED_AVERAGE);
-  map_set(&SampleFilters, "min", SAMPLE_FILTER_MIN);
-  map_set(&SampleFilters, "max", SAMPLE_FILTER_MAX);
 
   map_init(&TextureTypes);
   map_set(&TextureTypes, "2d", TEXTURE_2D);

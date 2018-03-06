@@ -91,7 +91,6 @@ extern map_int_t MeshDrawModes;
 extern map_int_t MeshUsages;
 extern map_int_t PolygonWindings;
 extern map_int_t ShapeTypes;
-extern map_int_t SampleFilters;
 extern map_int_t TextureFormats;
 extern map_int_t TextureTypes;
 extern map_int_t TimeUnits;

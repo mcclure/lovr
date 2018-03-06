@@ -23,20 +23,6 @@ int l_lovrCanvasGetFormat(lua_State* L) {
   return 1;
 }
 
-int l_lovrCanvasGetSampleFilter(lua_State* L) {
-  Canvas* canvas = luax_checktype(L, 1, Canvas);
-  SampleFilter sampleFilter = lovrCanvasGetSampleFilter(canvas);
-  luax_pushenum(L, &SampleFilters, sampleFilter);
-  return 1;
-}
-
-int l_lovrCanvasSetSampleFilter(lua_State* L) {
-  Canvas* canvas = luax_checktype(L, 1, Canvas);
-  SampleFilter sampleFilter = *(SampleFilter*) luax_optenum(L, 2, "weightedaverage", &SampleFilters, "sample filter");
-  lovrCanvasSetSampleFilter(canvas, sampleFilter);
-  return 0;
-}
-
 int l_lovrCanvasGetMSAA(lua_State* L) {
   Canvas* canvas = luax_checktype(L, 1, Canvas);
   lua_pushinteger(L, lovrCanvasGetMSAA(canvas));
@@ -45,8 +31,6 @@ int l_lovrCanvasGetMSAA(lua_State* L) {
 
 const luaL_Reg lovrCanvas[] = {
   { "renderTo", l_lovrCanvasRenderTo },
-  { "getSampleFilter", l_lovrCanvasGetSampleFilter },
-  { "setSampleFilter", l_lovrCanvasSetSampleFilter },
   { "getFormat", l_lovrCanvasGetFormat },
   { "getMSAA", l_lovrCanvasGetMSAA },
   { NULL, NULL }
