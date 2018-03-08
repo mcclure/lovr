@@ -84,6 +84,18 @@ int l_lovrTextureExportFile(lua_State* L) {
   return 0;
 }
 
+#include "graphics/texture.h"
+#include "graphics/graphics.h"
+
+int l_lovrTextureGetPixel1FR(lua_State *L) {
+  Texture* texture = luax_checktypeof(L, 1, Texture);
+  float output[4];
+  lovrGraphicsBindTexture(texture, texture->type, 0);
+  glGetTexImage(texture->type, 0, GL_RGBA, GL_FLOAT, sizeof(output), &output[0]);
+  lua_pushnumber(L, output[0]);
+  return 1;
+}
+
 const luaL_Reg lovrTexture[] = {
   { "getDimensions", l_lovrTextureGetDimensions },
   { "getFilter", l_lovrTextureGetFilter },
@@ -95,5 +107,6 @@ const luaL_Reg lovrTexture[] = {
   { "setFilter", l_lovrTextureSetFilter },
   { "setWrap", l_lovrTextureSetWrap },
   { "exportFile", l_lovrTextureExportFile },
+  { "getPixel1FR", l_lovrTextureGetPixel1FR },
   { NULL, NULL }
 };
