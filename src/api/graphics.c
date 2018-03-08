@@ -196,9 +196,11 @@ int l_lovrGraphicsInit(lua_State* L) {
   map_set(&StencilActions, "invert", STENCIL_INVERT);
 
   map_init(&TextureFormats);
+  map_set(&TextureFormats, "r", FORMAT_R);
   map_set(&TextureFormats, "rgb", FORMAT_RGB);
   map_set(&TextureFormats, "rgba", FORMAT_RGBA);
   map_set(&TextureFormats, "rgba16f", FORMAT_RGBA16F);
+  map_set(&TextureFormats, "r32f", FORMAT_R32F);
   map_set(&TextureFormats, "rgba32f", FORMAT_RGBA32F);
   map_set(&TextureFormats, "rg11b10f", FORMAT_RG11B10F);
   map_set(&TextureFormats, "dxt1", FORMAT_DXT1);

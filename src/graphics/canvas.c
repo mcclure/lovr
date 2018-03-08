@@ -6,9 +6,11 @@
 
 bool lovrCanvasSupportsFormat(TextureFormat format) {
   switch (format) {
+    case FORMAT_R:
     case FORMAT_RGB:
     case FORMAT_RGBA:
     case FORMAT_RGBA16F:
+    case FORMAT_R32F:
     case FORMAT_RGBA32F:
     case FORMAT_RG11B10F:
       return true;

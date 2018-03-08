@@ -120,9 +120,11 @@ TextureData* lovrTextureDataGetBlank(int width, int height, uint8_t value, Textu
 
   size_t pixelSize = 0;
   switch (format) {
+    case FORMAT_R: pixelSize = 1; break;
     case FORMAT_RGB: pixelSize = 3; break;
     case FORMAT_RGBA: pixelSize = 4; break;
     case FORMAT_RGBA16F: pixelSize = 8; break;
+    case FORMAT_R32F: pixelSize = 4; break;
     case FORMAT_RGBA32F: pixelSize = 16; break;
     case FORMAT_RG11B10F: pixelSize = 4; break;
     default: lovrThrow("Unable to create a blank compressed texture");

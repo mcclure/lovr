@@ -6,9 +6,11 @@
 
 GLenum lovrTextureFormatGetGLFormat(TextureFormat format) {
   switch (format) {
+    case FORMAT_R: return GL_RED;
     case FORMAT_RGB: return GL_RGB;
     case FORMAT_RGBA: return GL_RGBA;
     case FORMAT_RGBA16F: return GL_RGBA;
+    case FORMAT_R32F: return GL_RED;
     case FORMAT_RGBA32F: return GL_RGBA;
     case FORMAT_RG11B10F: return GL_RGB;
     case FORMAT_DXT1: return GL_COMPRESSED_RGB_S3TC_DXT1_EXT;
@@ -19,9 +21,11 @@ GLenum lovrTextureFormatGetGLFormat(TextureFormat format) {
 
 GLenum lovrTextureFormatGetGLInternalFormat(TextureFormat format, bool srgb) {
   switch (format) {
+    case FORMAT_R: return GL_R8;
     case FORMAT_RGB: return srgb ? GL_SRGB8 : GL_RGB8;
     case FORMAT_RGBA: return srgb ? GL_SRGB8_ALPHA8 : GL_RGBA8;
     case FORMAT_RGBA16F: return GL_RGBA16F;
+    case FORMAT_R32F: return GL_R32F;
     case FORMAT_RGBA32F: return GL_RGBA32F;
     case FORMAT_RG11B10F: return GL_R11F_G11F_B10F;
     case FORMAT_DXT1: return srgb ? GL_COMPRESSED_SRGB_S3TC_DXT1_EXT : GL_COMPRESSED_RGB_S3TC_DXT1_EXT;
