@@ -91,7 +91,7 @@ int l_lovrTextureGetPixel1FR(lua_State *L) {
   Texture* texture = luax_checktypeof(L, 1, Texture);
   float output[4];
   lovrGraphicsBindTexture(texture, texture->type, 0);
-  glGetTexImage(texture->type, 0, GL_RGBA, GL_FLOAT, sizeof(output), &output[0]);
+  glGetTexImage(texture->type, 0, GL_RGBA, GL_FLOAT, &output[0]);
   lua_pushnumber(L, output[0]);
   return 1;
 }
