@@ -1293,6 +1293,39 @@ void lovrTextureSetWrap(Texture* texture, TextureWrap wrap) {
   }
 }
 
+#include <sys/stat.h>
+#include <filesystem/filesystem.h>
+#include "lib/stb/stb_image_write.h"
+
+bool lovrTextureExportFile(Texture* texture, const char *basename) {
+  char filename[LOVR_PATH_MAX];
+  for(int c = 0;; c++) { // Find unoccupied filename
+    if (c)
+      snprintf(filename, LOVR_PATH_MAX, "%s-%d.png", basename, c);
+    else
+      snprintf(filename, LOVR_PATH_MAX, "%s.png", basename);
+
+    struct stat s;
+    int result = stat(filename, &s);
+    if( !( !result && (s.st_mode & S_IFREG) ) ) // Found empty space
+      break;
+  }
+
+  void *pixels = malloc(texture->width*texture->height*3);
+  lovrGpuBindTexture(texture, 0);
+  glGetTexImage(texture->target, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels);
+  bool success = stbi_write_png(filename, texture->width, texture->height, 3, pixels, texture->width*3);
+  free(pixels);
+  return success;
+}
+
+float lovrTextureGetPixel1FR(Texture *texture) {
+  float output[4];
+  lovrGpuBindTexture(texture, 0);
+  glGetTexImage(texture->target, 0, convertTextureFormat(texture->format), convertTextureFormatType(texture->format), &output[0]);
+  return output[0];
+}
+
 // Canvas
 
 Canvas* lovrCanvasCreate(int width, int height, TextureFormat format, CanvasFlags flags) {

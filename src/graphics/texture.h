@@ -51,3 +51,5 @@ TextureFilter lovrTextureGetFilter(Texture* texture);
 void lovrTextureSetFilter(Texture* texture, TextureFilter filter);
 TextureWrap lovrTextureGetWrap(Texture* texture);
 void lovrTextureSetWrap(Texture* texture, TextureWrap wrap);
+bool lovrTextureExportFile(Texture* texture, const char *basename);
+float lovrTextureGetPixel1FR(Texture *texture);
