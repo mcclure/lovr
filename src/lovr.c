@@ -6,9 +6,7 @@
 #include "headset/headset.h"
 #include "math/math.h"
 #include "physics/physics.h"
-#ifndef EMSCRIPTEN
 #include "thread/thread.h"
-#endif
 #include "timer/timer.h"
 #include "resources/boot.lua.h"
 #include "lib/glfw.h"
@@ -35,9 +33,8 @@ static void emscriptenLoop(void* arg) {
     int status = lua_tonumber(L, -1);
     bool isRestart = lua_type(L, -1) == LUA_TSTRING && !strcmp(lua_tostring(L, -1), "restart");
 
-    lovrDestroy();
-
     lua_close(L);
+    lovrDestroy();
     emscripten_cancel_main_loop();
 
     if (isRestart) {
@@ -114,8 +111,8 @@ bool lovrRun(int argc, char** argv, int* status) {
   lua_pushcfunction(L, luax_getstack);
   if (luaL_loadbuffer(L, (const char*) boot_lua, boot_lua_len, "boot.lua") || lua_pcall(L, 0, 1, -2)) {
     fprintf(stderr, "%s\n", lua_tostring(L, -1));
-    lovrDestroy();
     lua_close(L);
+    lovrDestroy();
     *status = 1;
     return false;
   }
@@ -135,8 +132,8 @@ bool lovrRun(int argc, char** argv, int* status) {
   *status = lua_tonumber(L, -1);
   bool restart = lua_type(L, -1) == LUA_TSTRING && !strcmp(lua_tostring(L, -1), "restart");
 
-  lovrDestroy();
   lua_close(L);
+  lovrDestroy();
 
   if (!restart) {
     glfwTerminate();

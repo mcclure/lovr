@@ -68,7 +68,7 @@ int luax_checkuniform(lua_State* L, int index, const Uniform* uniform, void* des
         case UNIFORM_IMAGE: {
           Image* image = (Image*) dest + i;
           image->texture = luax_checktype(L, j, Texture);
-          image->slice = 0;
+          image->slice = -1;
           image->mipmap = 0;
           image->access = ACCESS_READ_WRITE;
           TextureType type = lovrTextureGetType(image->texture);
@@ -98,6 +98,7 @@ int luax_checkuniform(lua_State* L, int index, const Uniform* uniform, void* des
         if (uniform->type == UNIFORM_MATRIX && lua_isuserdata(L, -1)) {
           Transform* transform = luax_checktype(L, -1, Transform);
           memcpy((float*) dest + i * components, transform->matrix, 16 * sizeof(float));
+          lua_pop(L, 1);
           continue;
         }
 
@@ -107,6 +108,7 @@ int luax_checkuniform(lua_State* L, int index, const Uniform* uniform, void* des
             case UNIFORM_FLOAT:
             case UNIFORM_MATRIX:
               *((float*) dest + i * components + j) = luaL_checknumber(L, -1);
+              break;
 
             case UNIFORM_INT:
               *((int*) dest + i * components + j) = luaL_checkinteger(L, -1);

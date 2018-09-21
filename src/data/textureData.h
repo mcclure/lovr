@@ -5,14 +5,6 @@
 
 #pragma once
 
-// WEBGL_compressed_texture_s3tc_srgb isn't ratified yet...
-#ifdef EMSCRIPTEN
-#define GL_COMPRESSED_SRGB_S3TC_DXT1_EXT 0x8C4C
-#define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT 0x8C4D
-#define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT 0x8C4E
-#define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT 0x8C4F
-#endif
-
 typedef enum {
   FORMAT_RGB,
   FORMAT_RGBA,
@@ -49,9 +41,8 @@ typedef struct {
   vec_mipmap_t mipmaps;
 } TextureData;
 
-TextureData* lovrTextureDataGetBlank(int width, int height, uint8_t value, TextureFormat format);
-TextureData* lovrTextureDataGetEmpty(int width, int height, TextureFormat format);
-TextureData* lovrTextureDataFromBlob(Blob* blob);
+TextureData* lovrTextureDataCreate(int width, int height, uint8_t value, TextureFormat format);
+TextureData* lovrTextureDataCreateFromBlob(Blob* blob, bool flip);
 Color lovrTextureDataGetPixel(TextureData* textureData, int x, int y);
 void lovrTextureDataSetPixel(TextureData* textureData, int x, int y, Color color);
 bool lovrTextureDataEncode(TextureData* textureData, const char* filename);

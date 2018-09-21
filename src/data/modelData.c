@@ -146,7 +146,7 @@ static int readMaterialTexture(struct aiMaterial* assimpMaterial, enum aiTexture
   }
 
   Blob* blob = lovrBlobCreate(data, size, path);
-  TextureData* textureData = lovrTextureDataFromBlob(blob);
+  TextureData* textureData = lovrTextureDataCreateFromBlob(blob, true);
   lovrRelease(blob);
   int textureIndex = modelData->textures.length;
   vec_push(&modelData->textures, textureData);
@@ -516,6 +516,10 @@ ModelData* lovrModelDataCreate(Blob* blob) {
 
   aiReleaseImport(scene);
   return modelData;
+}
+
+ModelData* lovrModelDataCreateEmpty() {
+  return lovrAlloc(ModelData, lovrModelDataDestroy);
 }
 
 void lovrModelDataDestroy(void* ref) {

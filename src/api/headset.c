@@ -31,6 +31,7 @@ const char* ControllerHands[] = {
 
 const char* HeadsetDrivers[] = {
   [DRIVER_FAKE] = "fake",
+  [DRIVER_OCULUS] = "oculus",
   [DRIVER_OPENVR] = "openvr",
   [DRIVER_WEBVR] = "webvr",
   NULL
@@ -159,15 +160,15 @@ int l_lovrHeadsetSetMirrored(lua_State* L) {
 }
 
 int l_lovrHeadsetGetDisplayWidth(lua_State* L) {
-  int width;
-  lovrHeadsetDriver->getDisplayDimensions(&width, NULL);
+  int width, height;
+  lovrHeadsetDriver->getDisplayDimensions(&width, &height);
   lua_pushnumber(L, width);
   return 1;
 }
 
 int l_lovrHeadsetGetDisplayHeight(lua_State* L) {
-  int height;
-  lovrHeadsetDriver->getDisplayDimensions(NULL, &height);
+  int width, height;
+  lovrHeadsetDriver->getDisplayDimensions(&width, &height);
   lua_pushnumber(L, height);
   return 1;
 }

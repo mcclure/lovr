@@ -16,6 +16,8 @@
 #if EMSCRIPTEN
 #include <GLES3/gl3.h>
 #include <GLES2/gl2ext.h>
+#include <GL/gl.h>
+#include <GL/glext.h>
 #else
 #include "lib/glad/glad.h"
 #endif
@@ -34,6 +36,15 @@
 #define LOVR_SHADER_BONES 5
 #define LOVR_SHADER_BONE_WEIGHTS 6
 
+typedef enum {
+  BARRIER_BLOCK,
+  BARRIER_UNIFORM_TEXTURE,
+  BARRIER_UNIFORM_IMAGE,
+  BARRIER_TEXTURE,
+  BARRIER_CANVAS,
+  MAX_BARRIERS
+} Barrier;
+
 static struct {
   Texture* defaultTexture;
   BlendMode blendMode;
@@ -49,22 +60,21 @@ static struct {
   bool stencilWriting;
   Winding winding;
   bool wireframe;
-  Canvas* canvas[MAX_CANVASES];
-  int canvasCount;
   uint32_t framebuffer;
   uint32_t indexBuffer;
   uint32_t program;
+  int activeTexture;
   Texture* textures[MAX_TEXTURES];
   Image images[MAX_IMAGES];
   uint32_t blockBuffers[2][MAX_BLOCK_BUFFERS];
   uint32_t vertexArray;
   uint32_t vertexBuffer;
-  float viewport[4];
+  float viewports[2][4];
   vec_void_t incoherents[MAX_BARRIERS];
   bool srgb;
-  bool supportsSinglepass;
-  GraphicsLimits limits;
-  GraphicsStats stats;
+  GpuFeatures features;
+  GpuLimits limits;
+  GpuStats stats;
 } state;
 
 struct ShaderBlock {
@@ -101,9 +111,11 @@ struct Texture {
   int depth;
   int mipmapCount;
   GLuint id;
+  GLuint msaaId;
   GLenum target;
   TextureFilter filter;
   TextureWrap wrap;
+  int msaa;
   bool srgb;
   bool mipmaps;
   bool allocated;
@@ -111,13 +123,17 @@ struct Texture {
 };
 
 struct Canvas {
-  Texture texture;
-  GLuint framebuffer;
-  GLuint resolveFramebuffer;
-  GLuint depthStencilBuffer;
-  GLuint msaaTexture;
+  Ref ref;
+  int width;
+  int height;
   CanvasFlags flags;
-  Canvas** attachments[MAX_CANVASES];
+  uint32_t framebuffer;
+  uint32_t depthBuffer;
+  uint32_t resolveBuffer;
+  Attachment attachments[MAX_CANVAS_ATTACHMENTS];
+  int count;
+  bool needsAttach;
+  bool needsResolve;
 };
 
 typedef struct {
@@ -185,6 +201,15 @@ static GLenum convertWrapMode(WrapMode mode) {
   }
 }
 
+static GLenum convertTextureTarget(TextureType type) {
+  switch (type) {
+    case TEXTURE_2D: return GL_TEXTURE_2D; break;
+    case TEXTURE_ARRAY: return GL_TEXTURE_2D_ARRAY; break;
+    case TEXTURE_CUBE: return GL_TEXTURE_CUBE_MAP; break;
+    case TEXTURE_VOLUME: return GL_TEXTURE_3D; break;
+  }
+}
+
 static GLenum convertTextureFormat(TextureFormat format) {
   switch (format) {
     case FORMAT_RGB: return GL_RGB;
@@ -247,14 +272,19 @@ static GLenum convertTextureFormatType(TextureFormat format) {
   }
 }
 
+static GLenum convertDepthFormat(DepthFormat format) {
+  switch (format) {
+    case DEPTH_D16: return GL_DEPTH_COMPONENT16; break;
+    case DEPTH_D32F: return GL_DEPTH_COMPONENT32F; break;
+    case DEPTH_D24S8: return GL_DEPTH24_STENCIL8; break;
+    default: lovrThrow("Unreachable"); return GL_DEPTH_COMPONENT16;
+  }
+}
+
 static bool isTextureFormatCompressed(TextureFormat format) {
   switch (format) {
-    case FORMAT_DXT1:
-    case FORMAT_DXT3:
-    case FORMAT_DXT5:
-      return true;
-    default:
-      return false;
+    case FORMAT_DXT1: case FORMAT_DXT3: case FORMAT_DXT5: return true;
+    default: return false;
   }
 }
 
@@ -266,6 +296,7 @@ static GLenum convertBufferUsage(BufferUsage usage) {
   }
 }
 
+#ifndef EMSCRIPTEN
 static GLenum convertAccess(UniformAccess access) {
   switch (access) {
     case ACCESS_READ: return GL_READ_ONLY;
@@ -273,6 +304,7 @@ static GLenum convertAccess(UniformAccess access) {
     case ACCESS_READ_WRITE: return GL_READ_WRITE;
   }
 }
+#endif
 
 static GLenum convertMeshDrawMode(MeshDrawMode mode) {
   switch (mode) {
@@ -283,16 +315,6 @@ static GLenum convertMeshDrawMode(MeshDrawMode mode) {
     case MESH_TRIANGLE_STRIP: return GL_TRIANGLE_STRIP;
     case MESH_TRIANGLES: return GL_TRIANGLES;
     case MESH_TRIANGLE_FAN: return GL_TRIANGLE_FAN;
-  }
-}
-
-static bool isCanvasFormatSupported(TextureFormat format) {
-  switch (format) {
-    case FORMAT_DXT1:
-    case FORMAT_DXT3:
-    case FORMAT_DXT5:
-      return false;
-    default: return true;
   }
 }
 
@@ -332,20 +354,10 @@ static UniformType getUniformType(GLenum type, const char* debug) {
 
 static int getUniformComponents(GLenum type) {
   switch (type) {
-    case GL_FLOAT_VEC2:
-    case GL_INT_VEC2:
-    case GL_FLOAT_MAT2:
-      return 2;
-    case GL_FLOAT_VEC3:
-    case GL_INT_VEC3:
-    case GL_FLOAT_MAT3:
-      return 3;
-    case GL_FLOAT_VEC4:
-    case GL_INT_VEC4:
-    case GL_FLOAT_MAT4:
-      return 4;
-    default:
-      return 1;
+    case GL_FLOAT_VEC2: case GL_INT_VEC2: case GL_FLOAT_MAT2: return 2;
+    case GL_FLOAT_VEC3: case GL_INT_VEC3: case GL_FLOAT_MAT3: return 3;
+    case GL_FLOAT_VEC4: case GL_INT_VEC4: case GL_FLOAT_MAT4: return 4;
+    default: return 1;
   }
 }
 
@@ -373,7 +385,7 @@ static size_t getUniformTypeLength(const Uniform* uniform) {
   }
 
   switch (uniform->type) {
-    case UNIFORM_MATRIX: size += 3; break;
+    case UNIFORM_MATRIX: size += 4; break;
     case UNIFORM_FLOAT: size += uniform->components == 1 ? 5 : 4; break;
     case UNIFORM_INT: size += uniform->components == 1 ? 3 : 5; break;
     default: break;
@@ -420,16 +432,62 @@ static const char* getUniformTypeName(const Uniform* uniform) {
 // TODO really ought to have TextureType-specific default textures
 static Texture* lovrGpuGetDefaultTexture() {
   if (!state.defaultTexture) {
-    TextureData* textureData = lovrTextureDataGetBlank(1, 1, 0xff, FORMAT_RGBA);
-    state.defaultTexture = lovrTextureCreate(TEXTURE_2D, &textureData, 1, true, false);
+    TextureData* textureData = lovrTextureDataCreate(1, 1, 0xff, FORMAT_RGBA);
+    state.defaultTexture = lovrTextureCreate(TEXTURE_2D, &textureData, 1, true, false, 0);
     lovrRelease(textureData);
   }
 
   return state.defaultTexture;
 }
 
-// TODO this is pretty slow
-static void lovrGpuCleanupIncoherentResource(void* resource, uint8_t incoherent) {
+// Syncing resources is only relevant for compute shaders
+#ifndef EMSCRIPTEN
+static void lovrGpuSync(uint8_t flags) {
+  if (!flags) {
+    return;
+  }
+
+  GLbitfield bits = 0;
+  for (int i = 0; i < MAX_BARRIERS; i++) {
+    if (!((flags >> i) & 1)) {
+      continue;
+    }
+
+    if (state.incoherents[i].length == 0) {
+      flags &= ~(1 << i);
+      continue;
+    }
+
+    if (i == BARRIER_BLOCK) {
+      for (int j = 0; j < state.incoherents[i].length; j++) {
+        ShaderBlock* block = state.incoherents[i].data[j];
+        block->incoherent &= ~(1 << i);
+      }
+    } else {
+      for (int j = 0; j < state.incoherents[i].length; j++) {
+        Texture* texture = state.incoherents[i].data[j];
+        texture->incoherent &= ~(1 << i);
+      }
+    }
+
+    vec_clear(&state.incoherents[i]);
+
+    switch (i) {
+      case BARRIER_BLOCK: bits |= GL_SHADER_STORAGE_BARRIER_BIT; break;
+      case BARRIER_UNIFORM_IMAGE: bits |= GL_SHADER_IMAGE_ACCESS_BARRIER_BIT; break;
+      case BARRIER_UNIFORM_TEXTURE: bits |= GL_TEXTURE_FETCH_BARRIER_BIT; break;
+      case BARRIER_TEXTURE: bits |= GL_TEXTURE_UPDATE_BARRIER_BIT; break;
+      case BARRIER_CANVAS: bits |= GL_FRAMEBUFFER_BARRIER_BIT; break;
+    }
+  }
+
+  if (bits) {
+    glMemoryBarrier(bits);
+  }
+}
+#endif
+
+static void lovrGpuDestroySyncResource(void* resource, uint8_t incoherent) {
   if (!incoherent) {
     return;
   }
@@ -445,8 +503,6 @@ static void lovrGpuCleanupIncoherentResource(void* resource, uint8_t incoherent)
     }
   }
 }
-
-// GPU
 
 static void lovrGpuBindFramebuffer(uint32_t framebuffer) {
   if (state.framebuffer != framebuffer) {
@@ -470,20 +526,16 @@ static void lovrGpuBindTexture(Texture* texture, int slot) {
     lovrRetain(texture);
     lovrRelease(state.textures[slot]);
     state.textures[slot] = texture;
-    glActiveTexture(GL_TEXTURE0 + slot);
+    if (state.activeTexture != slot) {
+      glActiveTexture(GL_TEXTURE0 + slot);
+      state.activeTexture = slot;
+    }
     glBindTexture(texture->target, texture->id);
   }
 }
 
-void lovrGpuDirtyTexture(int slot) {
-  lovrAssert(slot >= 0 && slot < MAX_TEXTURES, "Invalid texture slot %d", slot);
-  state.textures[slot] = NULL;
-}
-
-static void lovrGpuBindImage(Image* image, int slot) {
 #ifndef EMSCRIPTEN
-  lovrThrow("Shaders can not write to textures on this system");
-#endif
+static void lovrGpuBindImage(Image* image, int slot) {
   lovrAssert(slot >= 0 && slot < MAX_IMAGES, "Invalid image slot %d", slot);
 
   // This is a risky way to compare the two structs
@@ -496,22 +548,28 @@ static void lovrGpuBindImage(Image* image, int slot) {
     lovrAssert(image->slice < texture->depth, "Invalid texture slice '%d' for image uniform", image->slice);
     GLenum glAccess = convertAccess(image->access);
     GLenum glFormat = convertTextureFormatInternal(texture->format, false);
+    bool layered = image->slice == -1;
+    int slice = layered ? 0 : image->slice;
 
     lovrRetain(texture);
     lovrRelease(state.images[slot].texture);
-    glBindImageTexture(slot, texture->id, image->mipmap, image->slice == -1, image->slice, glAccess, glFormat);
+    glBindImageTexture(slot, texture->id, image->mipmap, layered, slice, glAccess, glFormat);
     memcpy(state.images + slot, image, sizeof(Image));
   }
 }
+#endif
 
 static void lovrGpuBindBlockBuffer(BlockType type, uint32_t buffer, int slot) {
-#ifndef EMSCRIPTEN
+#ifdef EMSCRIPTEN
   lovrAssert(type == BLOCK_UNIFORM, "Writable ShaderBlocks are not supported on this system");
+  GLenum target = GL_UNIFORM_BUFFER;
+#else
+  GLenum target = type == BLOCK_UNIFORM ? GL_UNIFORM_BUFFER : GL_SHADER_STORAGE_BUFFER;
 #endif
 
   if (state.blockBuffers[type][slot] != buffer) {
     state.blockBuffers[type][slot] = buffer;
-    glBindBufferBase(type == BLOCK_UNIFORM ? GL_UNIFORM_BUFFER : GL_SHADER_STORAGE_BUFFER, slot, buffer);
+    glBindBufferBase(target, slot, buffer);
   }
 }
 
@@ -529,13 +587,6 @@ static void lovrGpuBindVertexBuffer(uint32_t vertexBuffer) {
   }
 }
 
-static void lovrGpuSetViewport(float viewport[4]) {
-  if (memcmp(state.viewport, viewport, 4 * sizeof(float))) {
-    memcpy(state.viewport, viewport, 4 * sizeof(float));
-    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
-  }
-}
-
 static void lovrGpuUseProgram(uint32_t program) {
   if (state.program != program) {
     state.program = program;
@@ -544,9 +595,13 @@ static void lovrGpuUseProgram(uint32_t program) {
   }
 }
 
+// GPU
+
 void lovrGpuInit(bool srgb, gpuProc (*getProcAddress)(const char*)) {
 #ifndef EMSCRIPTEN
   gladLoadGLLoader((GLADloadproc) getProcAddress);
+  state.features.computeShaders = GLAD_GL_ARB_compute_shader;
+  state.features.singlepass = GLAD_GL_ARB_viewport_array && GLAD_GL_AMD_vertex_shader_viewport_index && GLAD_GL_ARB_fragment_layer_viewport;
   glEnable(GL_LINE_SMOOTH);
   glEnable(GL_PROGRAM_POINT_SIZE);
   if (srgb) {
@@ -554,24 +609,49 @@ void lovrGpuInit(bool srgb, gpuProc (*getProcAddress)(const char*)) {
   } else {
     glDisable(GL_FRAMEBUFFER_SRGB);
   }
-  state.supportsSinglepass = GLAD_GL_ARB_viewport_array && GLAD_GL_NV_viewport_array2 && GLAD_GL_NV_stereo_view_rendering;
+  glGetFloatv(GL_POINT_SIZE_RANGE, state.limits.pointSizes);
+#else
+  glGetFloatv(GL_ALIASED_POINT_SIZE_RANGE, state.limits.pointSizes);
 #endif
+  glGetIntegerv(GL_MAX_TEXTURE_SIZE, &state.limits.textureSize);
+  glGetIntegerv(GL_MAX_SAMPLES, &state.limits.textureMSAA);
+  glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &state.limits.textureAnisotropy);
   glEnable(GL_BLEND);
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   state.srgb = srgb;
-  state.blendMode = -1;
-  state.blendAlphaMode = -1;
+
+  state.blendMode = BLEND_ALPHA;
+  state.blendAlphaMode = BLEND_ALPHA_MULTIPLY;
+  glBlendEquation(GL_FUNC_ADD);
+  glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+
   state.culling = false;
-  state.depthEnabled = false;
-  state.depthTest = COMPARE_LESS;
+  glDisable(GL_CULL_FACE);
+
+  state.depthEnabled = true;
+  state.depthTest = COMPARE_LEQUAL;
   state.depthWrite = true;
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(convertCompareMode(state.depthTest));
+  glDepthMask(state.depthWrite);
+
   state.lineWidth = 1;
+  glLineWidth(state.lineWidth);
+
   state.stencilEnabled = false;
   state.stencilMode = COMPARE_NONE;
   state.stencilValue = 0;
   state.stencilWriting = false;
+  glDisable(GL_STENCIL_TEST);
+
   state.winding = WINDING_COUNTERCLOCKWISE;
+  glFrontFace(GL_CCW);
+
   state.wireframe = false;
+#ifndef EMSCRIPTEN
+  glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+#endif
+
   for (int i = 0; i < MAX_BARRIERS; i++) {
     vec_init(&state.incoherents[i]);
   }
@@ -588,77 +668,10 @@ void lovrGpuDestroy() {
   for (int i = 0; i < MAX_BARRIERS; i++) {
     vec_deinit(&state.incoherents[i]);
   }
+  memset(&state, 0, sizeof(state));
 }
 
-void lovrGpuClear(Canvas** canvas, int canvasCount, Color* color, float* depth, int* stencil) {
-  lovrGpuBindFramebuffer(canvasCount > 0 ? canvas[0]->framebuffer : 0);
-
-  if (color) {
-    gammaCorrectColor(color);
-    float c[4] = { color->r, color->g, color->b, color->a };
-    glClearBufferfv(GL_COLOR, 0, c);
-    for (int i = 1; i < canvasCount; i++) {
-      glClearBufferfv(GL_COLOR, i, c);
-    }
-  }
-
-  if (depth) {
-    if (!state.depthWrite) {
-      state.depthWrite = true;
-      glDepthMask(state.depthWrite);
-    }
-
-    glClearBufferfv(GL_DEPTH, 0, depth);
-  }
-
-  if (stencil) {
-    glClearBufferiv(GL_STENCIL, 0, stencil);
-  }
-
-  if (canvasCount > 0) {
-    lovrCanvasResolve(canvas[0]);
-  }
-}
-
-void lovrGraphicsStencil(StencilAction action, int replaceValue, StencilCallback callback, void* userdata) {
-  state.depthWrite = false;
-  glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-
-  if (!state.stencilEnabled) {
-    state.stencilEnabled = true;
-    glEnable(GL_STENCIL_TEST);
-  }
-
-  GLenum glAction;
-  switch (action) {
-    case STENCIL_REPLACE: glAction = GL_REPLACE; break;
-    case STENCIL_INCREMENT: glAction = GL_INCR; break;
-    case STENCIL_DECREMENT: glAction = GL_DECR; break;
-    case STENCIL_INCREMENT_WRAP: glAction = GL_INCR_WRAP; break;
-    case STENCIL_DECREMENT_WRAP: glAction = GL_DECR_WRAP; break;
-    case STENCIL_INVERT: glAction = GL_INVERT; break;
-  }
-
-  glStencilFunc(GL_ALWAYS, replaceValue, 0xff);
-  glStencilOp(GL_KEEP, GL_KEEP, glAction);
-
-  state.stencilWriting = true;
-  callback(userdata);
-  state.stencilWriting = false;
-
-  glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-  state.stencilMode = ~0; // Dirty
-}
-
-void lovrGpuDraw(DrawCommand* command) {
-  Mesh* mesh = command->mesh;
-  Material* material = command->material;
-  Shader* shader = command->shader;
-  Pipeline* pipeline = &command->pipeline;
-  int instances = command->instances;
-
-  // Bind shader
-  lovrGpuUseProgram(shader->program);
+void lovrGpuBindPipeline(Pipeline* pipeline) {
 
   // Blend mode
   if (state.blendMode != pipeline->blendMode || state.blendAlphaMode != pipeline->blendAlphaMode) {
@@ -786,175 +799,85 @@ void lovrGpuDraw(DrawCommand* command) {
   }
 
   // Wireframe
+#ifndef EMSCRIPTEN
   if (state.wireframe != pipeline->wireframe) {
     state.wireframe = pipeline->wireframe;
-#ifndef EMSCRIPTEN
     glPolygonMode(GL_FRONT_AND_BACK, state.wireframe ? GL_LINE : GL_FILL);
+  }
 #endif
-  }
+}
 
-  // Transform
-  lovrShaderSetMatrices(shader, "lovrModel", command->transform, 0, 16);
-  lovrShaderSetMatrices(shader, "lovrViews", command->camera.viewMatrix[0], 0, 32);
-  lovrShaderSetMatrices(shader, "lovrProjections", command->camera.projection[0], 0, 32);
-
-  float modelView[32];
-  mat4_multiply(mat4_set(modelView, command->camera.viewMatrix[0]), command->transform);
-  mat4_multiply(mat4_set(modelView + 16, command->camera.viewMatrix[1]), command->transform);
-  lovrShaderSetMatrices(shader, "lovrTransforms", modelView, 0, 32);
-
-  if (lovrShaderHasUniform(shader, "lovrNormalMatrices")) {
-    if (mat4_invert(modelView) && mat4_invert(modelView + 16)) {
-      mat4_transpose(modelView);
-      mat4_transpose(modelView + 16);
-    } else {
-      mat4_identity(modelView);
-      mat4_identity(modelView + 16);
-    }
-
-    float normalMatrices[18] = {
-      modelView[0], modelView[1], modelView[2],
-      modelView[4], modelView[5], modelView[6],
-      modelView[8], modelView[9], modelView[10],
-
-      modelView[16], modelView[17], modelView[18],
-      modelView[20], modelView[21], modelView[22],
-      modelView[24], modelView[25], modelView[26]
-    };
-
-    lovrShaderSetMatrices(shader, "lovrNormalMatrices", normalMatrices, 0, 18);
-  }
-
-  // Pose
-  float* pose = lovrMeshGetPose(mesh);
-  if (pose) {
-    lovrShaderSetMatrices(shader, "lovrPose", pose, 0, MAX_BONES * 16);
-  } else {
-    float identity[16];
-    mat4_identity(identity);
-    lovrShaderSetMatrices(shader, "lovrPose", identity, 0, 16);
-  }
-
-  // Point size
-  lovrShaderSetFloats(shader, "lovrPointSize", &pipeline->pointSize, 0, 1);
-
-  // Color
-  Color color = pipeline->color;
-  gammaCorrectColor(&color);
-  float data[4] = { color.r, color.g, color.b, color.a };
-  lovrShaderSetFloats(shader, "lovrColor", data, 0, 4);
-
-  // Material
-  for (int i = 0; i < MAX_MATERIAL_SCALARS; i++) {
-    float value = lovrMaterialGetScalar(material, i);
-    lovrShaderSetFloats(shader, lovrShaderScalarUniforms[i], &value, 0, 1);
-  }
-
-  for (int i = 0; i < MAX_MATERIAL_COLORS; i++) {
-    Color color = lovrMaterialGetColor(material, i);
-    gammaCorrectColor(&color);
-    float data[4] = { color.r, color.g, color.b, color.a };
-    lovrShaderSetFloats(shader, lovrShaderColorUniforms[i], data, 0, 4);
-  }
-
-  for (int i = 0; i < MAX_MATERIAL_TEXTURES; i++) {
-    Texture* texture = lovrMaterialGetTexture(material, i);
-    lovrShaderSetTextures(shader, lovrShaderTextureUniforms[i], &texture, 0, 1);
-  }
-
-  lovrShaderSetMatrices(shader, "lovrMaterialTransform", material->transform, 0, 9);
-
-  // Canvas
-  Canvas** canvas = pipeline->canvasCount > 0 ? pipeline->canvas : &command->camera.canvas;
-  int canvasCount = pipeline->canvasCount > 0 ? pipeline->canvasCount : (command->camera.canvas != NULL);
-  if (canvasCount != state.canvasCount || memcmp(state.canvas, canvas, canvasCount * sizeof(Canvas*))) {
-    if (state.canvasCount > 0) {
-      lovrCanvasResolve(state.canvas[0]);
-    }
-
-    state.canvasCount = canvasCount;
-
-    if (canvasCount > 0) {
-      memcpy(state.canvas, canvas, canvasCount * sizeof(Canvas*));
-      lovrGpuBindFramebuffer(canvas[0]->framebuffer);
-
-      GLenum buffers[MAX_CANVASES];
-      for (int i = 0; i < canvasCount; i++) {
-        buffers[i] = GL_COLOR_ATTACHMENT0 + i;
-        if (canvas[i]->flags.msaa > 0) {
-          glFramebufferRenderbuffer(GL_FRAMEBUFFER, buffers[i], GL_RENDERBUFFER, canvas[i]->msaaTexture);
-        } else {
-          glFramebufferTexture2D(GL_FRAMEBUFFER, buffers[i], GL_TEXTURE_2D, lovrTextureGetId((Texture*) canvas[i]), 0);
-        }
-      }
-      glDrawBuffers(canvasCount, buffers);
-
-      GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-      lovrAssert(status == GL_FRAMEBUFFER_COMPLETE, "Unable to bind framebuffer");
-    } else {
-      lovrGpuBindFramebuffer(0);
-    }
-  }
-
-  // We need to synchronize if any attached textures have pending writes
-  for (int i = 0; i < canvasCount; i++) {
-    if ((canvas[i]->texture.incoherent >> BARRIER_CANVAS) & 1) {
-      lovrGpuWait(1 << BARRIER_CANVAS);
-      break;
-    }
-  }
-
-  // Bind attributes
-  lovrMeshBind(mesh, shader);
-
-  bool stereo = pipeline->canvasCount == 0 && command->camera.stereo == true;
-  int drawCount = 1 + (stereo == true && !state.supportsSinglepass);
-
-  // Draw (TODEW)
-  for (int i = 0; i < drawCount; i++) {
-    if (pipeline->canvasCount > 0) {
-      int width = lovrTextureGetWidth((Texture*) pipeline->canvas[0], 0);
-      int height = lovrTextureGetHeight((Texture*) pipeline->canvas[0], 0);
-      lovrGpuSetViewport((float[4]) { 0, 0, width, height });
+void lovrGpuSetViewports(float* viewport, int count) {
 #ifndef EMSCRIPTEN
-    } else if (state.supportsSinglepass) {
-      glViewportArrayv(0, 2, command->camera.viewport[0]);
+  if (count > 1) {
+    if (memcmp(state.viewports, viewport, count * 4 * sizeof(float))) {
+      memcpy(state.viewports, viewport, count * 4 * sizeof(float));
+      glViewportArrayv(0, count, viewport);
+    }
+  } else {
 #endif
-    } else  {
-      lovrGpuSetViewport(command->camera.viewport[i]);
+    if (memcmp(state.viewports, viewport, 4 * sizeof(float))) {
+      memcpy(state.viewports, viewport, 4 * sizeof(float));
+      glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
     }
-
-    // Bind uniforms
-    int eye = (stereo && state.supportsSinglepass) ? -1 : i;
-    lovrShaderSetInts(shader, "lovrEye", &eye, 0, 1);
-    lovrShaderBind(shader);
-
-    uint32_t rangeStart, rangeCount;
-    lovrMeshGetDrawRange(mesh, &rangeStart, &rangeCount);
-    uint32_t indexCount;
-    size_t indexSize;
-    lovrMeshReadIndices(mesh, &indexCount, &indexSize);
-    GLenum glDrawMode = convertMeshDrawMode(lovrMeshGetDrawMode(mesh));
-    if (indexCount > 0) {
-      size_t count = rangeCount ? rangeCount : indexCount;
-      GLenum indexType = indexSize == sizeof(uint16_t) ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT;
-      size_t offset = rangeStart * indexSize;
-      if (instances > 1) {
-        glDrawElementsInstanced(glDrawMode, count, indexType, (GLvoid*) offset, instances);
-      } else {
-        glDrawElements(glDrawMode, count, indexType, (GLvoid*) offset);
-      }
-    } else {
-      size_t count = rangeCount ? rangeCount : lovrMeshGetVertexCount(mesh);
-      if (instances > 1) {
-        glDrawArraysInstanced(glDrawMode, rangeStart, count, instances);
-      } else {
-        glDrawArrays(glDrawMode, rangeStart, count);
-      }
-    }
-
-    state.stats.drawCalls++;
+#ifndef EMSCRIPTEN
   }
+#endif
+}
+
+void lovrGpuClear(Canvas* canvas, Color* color, float* depth, int* stencil) {
+  lovrCanvasBind(canvas, true);
+
+  if (color) {
+    gammaCorrectColor(color);
+    int count = canvas ? canvas->count : 1;
+    for (int i = 0; i < count; i++) {
+      glClearBufferfv(GL_COLOR, i, (float[]) { color->r, color->g, color->b, color->a });
+    }
+  }
+
+  if (depth && !state.depthWrite) {
+    state.depthWrite = true;
+    glDepthMask(state.depthWrite);
+  }
+
+  if (depth && stencil) {
+    glClearBufferfi(GL_DEPTH_STENCIL, 0, *depth, *stencil);
+  } else if (depth) {
+    glClearBufferfv(GL_DEPTH, 0, depth);
+  } else if (stencil) {
+    glClearBufferiv(GL_STENCIL, 0, stencil);
+  }
+}
+
+void lovrGpuStencil(StencilAction action, int replaceValue, StencilCallback callback, void* userdata) {
+  state.depthWrite = false;
+  glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+
+  if (!state.stencilEnabled) {
+    state.stencilEnabled = true;
+    glEnable(GL_STENCIL_TEST);
+  }
+
+  GLenum glAction;
+  switch (action) {
+    case STENCIL_REPLACE: glAction = GL_REPLACE; break;
+    case STENCIL_INCREMENT: glAction = GL_INCR; break;
+    case STENCIL_DECREMENT: glAction = GL_DECR; break;
+    case STENCIL_INCREMENT_WRAP: glAction = GL_INCR_WRAP; break;
+    case STENCIL_DECREMENT_WRAP: glAction = GL_DECR_WRAP; break;
+    case STENCIL_INVERT: glAction = GL_INVERT; break;
+  }
+
+  glStencilFunc(GL_ALWAYS, replaceValue, 0xff);
+  glStencilOp(GL_KEEP, GL_KEEP, glAction);
+
+  state.stencilWriting = true;
+  callback(userdata);
+  state.stencilWriting = false;
+
+  glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+  state.stencilMode = ~0; // Dirty
 }
 
 void lovrGpuCompute(Shader* shader, int x, int y, int z) {
@@ -963,53 +886,8 @@ void lovrGpuCompute(Shader* shader, int x, int y, int z) {
 #else
   lovrAssert(GLAD_GL_ARB_compute_shader, "Compute shaders are not supported on this system");
   lovrAssert(shader->type == SHADER_COMPUTE, "Attempt to use a non-compute shader for a compute operation");
-  lovrGpuUseProgram(shader->program);
   lovrShaderBind(shader);
   glDispatchCompute(x, y, z);
-#endif
-}
-
-void lovrGpuWait(uint8_t flags) {
-#ifndef EMSCRIPTEN
-  if (!GL_ARB_shader_image_load_store || !flags) {
-    return;
-  }
-
-  GLbitfield bits = 0;
-  for (int i = 0; i < MAX_BARRIERS; i++) {
-    if (!((flags >> i) & 1)) {
-      continue;
-    }
-
-    if (state.incoherents[i].length == 0) {
-      flags &= ~(1 << i);
-      continue;
-    }
-
-    if (i == BARRIER_BLOCK) {
-      for (int j = 0; j < state.incoherents[j].length; j++) {
-        ShaderBlock* block = state.incoherents[i].data[j];
-        block->incoherent &= ~(1 << i);
-      }
-    } else {
-      for (int j = 0; j < state.incoherents[j].length; j++) {
-        Texture* texture = state.incoherents[i].data[j];
-        texture->incoherent &= ~(1 << i);
-      }
-    }
-
-    switch (i) {
-      case BARRIER_BLOCK: bits |= GL_SHADER_STORAGE_BARRIER_BIT; break;
-      case BARRIER_UNIFORM_IMAGE: bits |= GL_SHADER_IMAGE_ACCESS_BARRIER_BIT; break;
-      case BARRIER_UNIFORM_TEXTURE: bits |= GL_TEXTURE_FETCH_BARRIER_BIT; break;
-      case BARRIER_TEXTURE: bits |= GL_TEXTURE_UPDATE_BARRIER_BIT; break;
-      case BARRIER_CANVAS: bits |= GL_FRAMEBUFFER_BARRIER_BIT; break;
-    }
-  }
-
-  if (bits) {
-    glMemoryBarrier(bits);
-  }
 #endif
 }
 
@@ -1021,60 +899,43 @@ void lovrGpuPresent() {
 #endif
 }
 
-GraphicsFeatures lovrGraphicsGetSupported() {
-  return (GraphicsFeatures) {
-#ifdef EMSCRIPTEN
-    .computeShaders = false,
-    .writableBlocks = false
-#else
-    .computeShaders = GLAD_GL_ARB_compute_shader,
-    .writableBlocks = GLAD_GL_ARB_shader_storage_buffer_object
-#endif
-  };
+void lovrGpuDirtyTexture() {
+  state.textures[state.activeTexture] = NULL;
 }
 
-GraphicsLimits lovrGraphicsGetLimits() {
-  if (!state.limits.initialized) {
-#ifdef EMSCRIPTEN
-    glGetFloatv(GL_ALIASED_POINT_SIZE_RANGE, state.limits.pointSizes);
-#else
-    glGetFloatv(GL_POINT_SIZE_RANGE, state.limits.pointSizes);
-#endif
-    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &state.limits.textureSize);
-    glGetIntegerv(GL_MAX_SAMPLES, &state.limits.textureMSAA);
-    glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &state.limits.textureAnisotropy);
-    state.limits.initialized = 1;
-  }
-
-  return state.limits;
+const GpuFeatures* lovrGpuGetSupported() {
+  return &state.features;
 }
 
-GraphicsStats lovrGraphicsGetStats() {
-  return state.stats;
+const GpuLimits* lovrGpuGetLimits() {
+  return &state.limits;
+}
+
+const GpuStats* lovrGpuGetStats() {
+  return &state.stats;
 }
 
 // Texture
 
-Texture* lovrTextureCreate(TextureType type, TextureData** slices, int sliceCount, bool srgb, bool mipmaps) {
+Texture* lovrTextureCreate(TextureType type, TextureData** slices, int sliceCount, bool srgb, bool mipmaps, int msaa) {
   Texture* texture = lovrAlloc(Texture, lovrTextureDestroy);
   if (!texture) return NULL;
 
   texture->type = type;
   texture->srgb = srgb;
   texture->mipmaps = mipmaps;
-
-  switch (type) {
-    case TEXTURE_2D: texture->target = GL_TEXTURE_2D; break;
-    case TEXTURE_ARRAY: texture->target = GL_TEXTURE_2D_ARRAY; break;
-    case TEXTURE_CUBE: texture->target = GL_TEXTURE_CUBE_MAP; break;
-    case TEXTURE_VOLUME: texture->target = GL_TEXTURE_3D; break;
-  }
+  texture->target = convertTextureTarget(type);
 
   WrapMode wrap = type == TEXTURE_CUBE ? WRAP_CLAMP : WRAP_REPEAT;
   glGenTextures(1, &texture->id);
   lovrGpuBindTexture(texture, 0);
   lovrTextureSetFilter(texture, lovrGraphicsGetDefaultFilter());
   lovrTextureSetWrap(texture, (TextureWrap) { .s = wrap, .t = wrap, .r = wrap });
+
+  if (msaa > 0) {
+    texture->msaa = msaa;
+    glGenRenderbuffers(1, &texture->msaaId);
+  }
 
   if (sliceCount > 0) {
     lovrTextureAllocate(texture, slices[0]->width, slices[0]->height, sliceCount, slices[0]->format);
@@ -1086,25 +947,43 @@ Texture* lovrTextureCreate(TextureType type, TextureData** slices, int sliceCoun
   return texture;
 }
 
+Texture* lovrTextureCreateFromHandle(uint32_t handle, TextureType type) {
+  Texture* texture = lovrAlloc(Texture, lovrTextureDestroy);
+  if (!texture) return NULL;
+
+  texture->type = type;
+  texture->id = handle;
+  texture->target = convertTextureTarget(type);
+
+  lovrGpuBindTexture(texture, 0);
+  glGetTexLevelParameteriv(texture->target, 0, GL_TEXTURE_WIDTH, &texture->width);
+  glGetTexLevelParameteriv(texture->target, 0, GL_TEXTURE_HEIGHT, &texture->height);
+
+  return texture;
+}
+
 void lovrTextureDestroy(void* ref) {
   Texture* texture = ref;
   glDeleteTextures(1, &texture->id);
-  lovrGpuCleanupIncoherentResource(texture, texture->incoherent);
+  glDeleteRenderbuffers(1, &texture->msaaId);
+  lovrGpuDestroySyncResource(texture, texture->incoherent);
   free(texture);
 }
 
 void lovrTextureAllocate(Texture* texture, int width, int height, int depth, TextureFormat format) {
-  int maxSize = lovrGraphicsGetLimits().textureSize;
+  int maxSize = state.limits.textureSize;
   lovrAssert(!texture->allocated, "Texture is already allocated");
   lovrAssert(texture->type != TEXTURE_CUBE || width == height, "Cubemap images must be square");
   lovrAssert(texture->type != TEXTURE_CUBE || depth == 6, "6 images are required for a cube texture\n");
   lovrAssert(texture->type != TEXTURE_2D || depth == 1, "2D textures can only contain a single image");
   lovrAssert(width < maxSize, "Texture width %d exceeds max of %d", width, maxSize);
   lovrAssert(height < maxSize, "Texture height %d exceeds max of %d", height, maxSize);
+  lovrAssert(!texture->msaa || texture->type == TEXTURE_2D, "Only 2D textures can be created with MSAA");
 
   texture->allocated = true;
   texture->width = width;
   texture->height = height;
+  texture->depth = depth;
   texture->format = format;
 
   if (texture->mipmaps) {
@@ -1118,7 +997,7 @@ void lovrTextureAllocate(Texture* texture, int width, int height, int depth, Tex
     return;
   }
 
-  bool srgb = lovrGraphicsIsGammaCorrect() && texture->srgb;
+  bool srgb = state.srgb && texture->srgb;
   GLenum glFormat = convertTextureFormat(format);
   GLenum internalFormat = convertTextureFormatInternal(format, srgb);
 #ifndef EMSCRIPTEN
@@ -1154,15 +1033,21 @@ void lovrTextureAllocate(Texture* texture, int width, int height, int depth, Tex
     }
   }
 #endif
+
+  if (texture->msaaId) {
+    glBindRenderbuffer(GL_RENDERBUFFER, texture->msaaId);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, texture->msaa, internalFormat, width, height);
+  }
 }
 
 void lovrTextureReplacePixels(Texture* texture, TextureData* textureData, int x, int y, int slice, int mipmap) {
   lovrAssert(texture->allocated, "Texture is not allocated");
-  lovrAssert(textureData->blob.data, "Trying to replace Texture pixels with empty pixel data");
 
+#ifndef EMSCRIPTEN
   if ((texture->incoherent >> BARRIER_TEXTURE) & 1) {
-    lovrGpuWait(1 << BARRIER_TEXTURE);
+    lovrGpuSync(1 << BARRIER_TEXTURE);
   }
+#endif
 
   int maxWidth = lovrTextureGetWidth(texture, mipmap);
   int maxHeight = lovrTextureGetHeight(texture, mipmap);
@@ -1173,7 +1058,6 @@ void lovrTextureReplacePixels(Texture* texture, TextureData* textureData, int x,
   lovrAssert(mipmap >= 0 && mipmap < texture->mipmapCount, "Invalid mipmap level %d", mipmap);
   GLenum glFormat = convertTextureFormat(textureData->format);
   GLenum glInternalFormat = convertTextureFormatInternal(textureData->format, texture->srgb);
-  GLenum glType = convertTextureFormatType(textureData->format);
   GLenum binding = (texture->type == TEXTURE_CUBE) ? GL_TEXTURE_CUBE_MAP_POSITIVE_X + slice : texture->target;
 
   lovrGpuBindTexture(texture, 0);
@@ -1194,6 +1078,9 @@ void lovrTextureReplacePixels(Texture* texture, TextureData* textureData, int x,
       }
     }
   } else {
+    lovrAssert(textureData->blob.data, "Trying to replace Texture pixels with empty pixel data");
+    GLenum glType = convertTextureFormatType(textureData->format);
+
     switch (texture->type) {
       case TEXTURE_2D:
       case TEXTURE_CUBE:
@@ -1206,7 +1093,15 @@ void lovrTextureReplacePixels(Texture* texture, TextureData* textureData, int x,
     }
 
     if (texture->mipmaps) {
+#if defined(__APPLE__) || defined(EMSCRIPTEN) // glGenerateMipmap doesn't work on big cubemap textures on macOS
+      if (texture->type != TEXTURE_CUBE || width < 2048) {
+        glGenerateMipmap(texture->target);
+      } else {
+        glTexParameteri(texture->target, GL_TEXTURE_MAX_LEVEL, 0);
+      }
+#else
       glGenerateMipmap(texture->target);
+#endif
     }
   }
 }
@@ -1328,70 +1223,29 @@ float lovrTextureGetPixel1FR(Texture *texture) {
 
 // Canvas
 
-Canvas* lovrCanvasCreate(int width, int height, TextureFormat format, CanvasFlags flags) {
-  lovrAssert(isCanvasFormatSupported(format), "Unsupported texture format for Canvas");
+Canvas* lovrCanvasCreate(int width, int height, CanvasFlags flags) {
   Canvas* canvas = lovrAlloc(Canvas, lovrCanvasDestroy);
-  Texture* texture = lovrTextureCreate(TEXTURE_2D, NULL, 0, true, flags.mipmaps);
+  if (!canvas) return NULL;
 
-  if (!canvas || !texture) {
-    lovrRelease(canvas);
-    lovrRelease(texture);
-    return NULL;
-  }
-
-  lovrTextureAllocate(texture, width, height, 1, format);
-
-  Ref ref = canvas->texture.ref;
-  canvas->texture = *texture;
-  canvas->texture.ref = ref;
+  canvas->width = width;
+  canvas->height = height;
   canvas->flags = flags;
 
-  // Framebuffer
   glGenFramebuffers(1, &canvas->framebuffer);
   lovrGpuBindFramebuffer(canvas->framebuffer);
 
-  // Color attachment
-  if (flags.msaa > 0) {
-    GLenum internalFormat = convertTextureFormatInternal(format, lovrGraphicsIsGammaCorrect());
-    glGenRenderbuffers(1, &canvas->msaaTexture);
-    glBindRenderbuffer(GL_RENDERBUFFER, canvas->msaaTexture);
-    glRenderbufferStorageMultisample(GL_RENDERBUFFER, flags.msaa, internalFormat, width, height);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, canvas->msaaTexture);
-  } else {
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, canvas->texture.id, 0);
+  if (flags.depth != DEPTH_NONE) {
+    GLenum attachment = flags.depth == DEPTH_D24S8 ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT;
+    GLenum format = convertDepthFormat(flags.depth);
+    glGenRenderbuffers(1, &canvas->depthBuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, canvas->depthBuffer);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, canvas->flags.msaa, format, width, height);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, attachment, GL_RENDERBUFFER, canvas->depthBuffer);
   }
 
-  // Depth/Stencil
-  if (flags.depth || flags.stencil) {
-    GLenum depthStencilFormat = flags.stencil ? GL_DEPTH24_STENCIL8 : GL_DEPTH_COMPONENT24;
-    glGenRenderbuffers(1, &canvas->depthStencilBuffer);
-    glBindRenderbuffer(GL_RENDERBUFFER, canvas->depthStencilBuffer);
-    if (flags.msaa > 0) {
-      glRenderbufferStorageMultisample(GL_RENDERBUFFER, flags.msaa, depthStencilFormat, width, height);
-    } else {
-      glRenderbufferStorage(GL_RENDERBUFFER, depthStencilFormat, width, height);
-    }
-
-    if (flags.depth) {
-      glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, canvas->depthStencilBuffer);
-    }
-
-    if (flags.stencil) {
-      glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, canvas->depthStencilBuffer);
-    }
+  if (flags.msaa) {
+    glGenFramebuffers(1, &canvas->resolveBuffer);
   }
-
-  // Resolve framebuffer
-  if (flags.msaa > 0) {
-    glGenFramebuffers(1, &canvas->resolveFramebuffer);
-    lovrGpuBindFramebuffer(canvas->resolveFramebuffer);
-    glBindTexture(GL_TEXTURE_2D, canvas->texture.id);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, canvas->texture.id, 0);
-    lovrGpuBindFramebuffer(canvas->framebuffer);
-  }
-
-  lovrAssert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "Error creating Canvas");
-  lovrGpuClear(&canvas, 1, &(Color) { 0, 0, 0, 0 }, &(float) { 1. }, &(int) { 0 });
 
   return canvas;
 }
@@ -1399,52 +1253,187 @@ Canvas* lovrCanvasCreate(int width, int height, TextureFormat format, CanvasFlag
 void lovrCanvasDestroy(void* ref) {
   Canvas* canvas = ref;
   glDeleteFramebuffers(1, &canvas->framebuffer);
-  if (canvas->resolveFramebuffer) {
-    glDeleteFramebuffers(1, &canvas->resolveFramebuffer);
+  glDeleteRenderbuffers(1, &canvas->depthBuffer);
+  glDeleteFramebuffers(1, &canvas->resolveBuffer);
+  for (int i = 0; i < canvas->count; i++) {
+    lovrRelease(canvas->attachments[i].texture);
   }
-  if (canvas->depthStencilBuffer) {
-    glDeleteRenderbuffers(1, &canvas->depthStencilBuffer);
+  free(ref);
+}
+
+const Attachment* lovrCanvasGetAttachments(Canvas* canvas, int* count) {
+  if (count) *count = canvas->count;
+  return canvas->attachments;
+}
+
+void lovrCanvasSetAttachments(Canvas* canvas, Attachment* attachments, int count) {
+  lovrAssert(count > 0, "A Canvas must have at least one attached Texture");
+  lovrAssert(count <= MAX_CANVAS_ATTACHMENTS, "Only %d textures can be attached to a Canvas, got %d\n", MAX_CANVAS_ATTACHMENTS, count);
+
+  if (!canvas->needsAttach && count == canvas->count && !memcmp(canvas->attachments, attachments, count * sizeof(Attachment))) {
+    return;
   }
-  if (canvas->msaaTexture) {
-    glDeleteTextures(1, &canvas->msaaTexture);
+
+  for (int i = 0; i < count; i++) {
+    Texture* texture = attachments[i].texture;
+    int width = lovrTextureGetWidth(texture, attachments[i].level);
+    int height = lovrTextureGetHeight(texture, attachments[i].level);
+    lovrAssert(!canvas->depthBuffer || width == canvas->width, "Texture width of %d does not match Canvas width (%d)", width, canvas->width);
+    lovrAssert(!canvas->depthBuffer || height == canvas->height, "Texture height of %d does not match Canvas height (%d)", height, canvas->height);
+    lovrAssert(texture->msaa == canvas->flags.msaa, "Texture MSAA does not match Canvas MSAA");
+    lovrRetain(texture);
   }
-  lovrTextureDestroy(ref);
+
+  for (int i = 0; i < canvas->count; i++) {
+    lovrRelease(canvas->attachments[i].texture);
+  }
+
+  memcpy(canvas->attachments, attachments, count * sizeof(Attachment));
+  canvas->count = count;
+  canvas->needsAttach = true;
+}
+
+void lovrCanvasBind(Canvas* canvas, bool willDraw) {
+  if (canvas) {
+    lovrGpuBindFramebuffer(canvas->framebuffer);
+    canvas->needsResolve = willDraw;
+  } else {
+    lovrGpuBindFramebuffer(0);
+    return;
+  }
+
+  if (!canvas->needsAttach) {
+    return;
+  }
+
+  // We need to synchronize if any of the Canvas attachments have pending writes on them
+#ifndef EMSCRIPTEN
+  for (int i = 0; i < canvas->count; i++) {
+    Texture* texture = canvas->attachments[i].texture;
+    if (texture->incoherent && (texture->incoherent >> BARRIER_CANVAS) & 1) {
+      lovrGpuSync(1 << BARRIER_CANVAS);
+      break;
+    }
+  }
+#endif
+
+  // Use the read framebuffer as a binding point to bind resolve textures
+  if (canvas->flags.msaa) {
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, canvas->resolveBuffer);
+  }
+
+  GLenum buffers[MAX_CANVAS_ATTACHMENTS] = { GL_NONE };
+  for (int i = 0; i < canvas->count; i++) {
+    GLenum buffer = buffers[i] = GL_COLOR_ATTACHMENT0 + i;
+    Attachment* attachment = &canvas->attachments[i];
+    Texture* texture = attachment->texture;
+    int slice = attachment->slice;
+    int level = attachment->level;
+
+    if (canvas->flags.msaa) {
+      glFramebufferRenderbuffer(GL_FRAMEBUFFER, buffer, GL_RENDERBUFFER, texture->msaaId);
+    }
+
+    switch (texture->type) {
+      case TEXTURE_2D: glFramebufferTexture2D(GL_READ_FRAMEBUFFER, buffer, GL_TEXTURE_2D, texture->id, level); break;
+      case TEXTURE_CUBE: glFramebufferTexture2D(GL_READ_FRAMEBUFFER, buffer, GL_TEXTURE_CUBE_MAP_POSITIVE_X + slice, texture->id, level); break;
+      case TEXTURE_ARRAY: glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, buffer, texture->id, level, slice); break;
+      case TEXTURE_VOLUME: glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, buffer, texture->id, level, slice); break;
+    }
+  }
+  glDrawBuffers(canvas->count, buffers);
+
+  GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+  switch (status) {
+    case GL_FRAMEBUFFER_COMPLETE: break;
+    case GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE: lovrThrow("Unable to set Canvas (MSAA settings)"); break;
+    case GL_FRAMEBUFFER_UNSUPPORTED: lovrThrow("Unable to set Canvas (Texture formats)"); break;
+    default: lovrThrow("Unable to set Canvas (reason unknown)"); break;
+  }
+
+  canvas->needsAttach = false;
 }
 
 void lovrCanvasResolve(Canvas* canvas) {
-  if (canvas->flags.msaa > 0) {
-    int width = canvas->texture.width;
-    int height = canvas->texture.height;
+  if (!canvas->needsResolve) {
+    return;
+  }
+
+  if (canvas->flags.msaa) {
+    int w = canvas->width;
+    int h = canvas->height;
     glBindFramebuffer(GL_READ_FRAMEBUFFER, canvas->framebuffer);
-    lovrGpuBindFramebuffer(canvas->resolveFramebuffer);
-    glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, canvas->resolveBuffer);
+    state.framebuffer = canvas->resolveBuffer;
+
+    if (canvas->count == 1) {
+      glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    } else {
+      GLenum buffers[MAX_CANVAS_ATTACHMENTS] = { GL_NONE };
+      for (int i = 0; i < canvas->count; i++) {
+        buffers[i] = GL_COLOR_ATTACHMENT0 + i;
+        glReadBuffer(i);
+        glDrawBuffers(1, &buffers[i]);
+        glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+      }
+      glReadBuffer(0);
+      glDrawBuffers(canvas->count, buffers);
+    }
   }
 
   if (canvas->flags.mipmaps) {
-    lovrGpuBindTexture(&canvas->texture, 0);
-    glGenerateMipmap(canvas->texture.target);
+    for (int i = 0; i < canvas->count; i++) {
+      Texture* texture = canvas->attachments[i].texture;
+      if (texture->mipmapCount > 1) {
+        lovrGpuBindTexture(texture, 0);
+        glGenerateMipmap(texture->target);
+      }
+    }
   }
+
+  canvas->needsResolve = false;
 }
 
-TextureFormat lovrCanvasGetFormat(Canvas* canvas) {
-  return canvas->texture.format;
+bool lovrCanvasIsStereo(Canvas* canvas) {
+  return canvas->flags.stereo;
+}
+
+int lovrCanvasGetWidth(Canvas* canvas) {
+  return canvas->width;
+}
+
+int lovrCanvasGetHeight(Canvas* canvas) {
+  return canvas->height;
 }
 
 int lovrCanvasGetMSAA(Canvas* canvas) {
   return canvas->flags.msaa;
 }
 
-TextureData* lovrCanvasNewTextureData(Canvas* canvas) {
-  TextureData* textureData = lovrTextureDataGetBlank(canvas->texture.width, canvas->texture.height, 0, FORMAT_RGBA);
-  if (!textureData) return NULL;
+DepthFormat lovrCanvasGetDepthFormat(Canvas* canvas) {
+  return canvas->flags.depth;
+}
 
-  if ((canvas->texture.incoherent >> BARRIER_TEXTURE) & 1) {
-    lovrGpuWait(1 << BARRIER_TEXTURE);
+TextureData* lovrCanvasNewTextureData(Canvas* canvas, int index) {
+  lovrCanvasBind(canvas, false);
+
+#ifndef EMSCRIPTEN
+  Texture* texture = canvas->attachments[index].texture;
+  if ((texture->incoherent >> BARRIER_TEXTURE) & 1) {
+    lovrGpuSync(1 << BARRIER_TEXTURE);
+  }
+#endif
+
+  if (index != 0) {
+    glReadBuffer(index);
   }
 
-  lovrGpuBindFramebuffer(canvas->framebuffer);
-  glReadPixels(0, 0, canvas->texture.width, canvas->texture.height, GL_RGBA, GL_UNSIGNED_BYTE, textureData->blob.data);
+  TextureData* textureData = lovrTextureDataCreate(canvas->width, canvas->height, 0x0, FORMAT_RGBA);
+  glReadPixels(0, 0, canvas->width, canvas->height, GL_RGBA, GL_UNSIGNED_BYTE, textureData->blob.data);
+
+  if (index != 0) {
+    glReadBuffer(0);
+  }
 
   return textureData;
 }
@@ -1681,14 +1670,30 @@ Shader* lovrShaderCreateGraphics(const char* vertexSource, const char* fragmentS
   Shader* shader = lovrAlloc(Shader, lovrShaderDestroy);
   if (!shader) return NULL;
 
+#ifdef EMSCRIPTEN
+  const char* vertexHeader = "#version 300 es\nprecision mediump float;\nprecision mediump int;\n";
+  const char* fragmentHeader = vertexHeader;
+#else
+  const char* vertexHeader = state.features.computeShaders ? "#version 430\n" : "#version 150\n";
+  const char* fragmentHeader = "#version 150\nin vec4 gl_FragCoord;\n";
+#endif
+
+  const char* vertexSinglepass = state.features.singlepass ?
+    "#extension GL_AMD_vertex_shader_viewport_index : require\n" "#define SINGLEPASS 1\n" :
+    "#define SINGLEPASS 0\n";
+
+  const char* fragmentSinglepass = state.features.singlepass ?
+    "#extension GL_ARB_fragment_layer_viewport : require\n" "#define SINGLEPASS 1\n" :
+    "#define SINGLEPASS 0\n";
+
   // Vertex
   vertexSource = vertexSource == NULL ? lovrDefaultVertexShader : vertexSource;
-  const char* vertexSources[] = { lovrShaderVertexPrefix, vertexSource, lovrShaderVertexSuffix };
+  const char* vertexSources[] = { vertexHeader, vertexSinglepass, lovrShaderVertexPrefix, vertexSource, lovrShaderVertexSuffix };
   GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertexSources, sizeof(vertexSources) / sizeof(vertexSources[0]));
 
   // Fragment
   fragmentSource = fragmentSource == NULL ? lovrDefaultFragmentShader : fragmentSource;
-  const char* fragmentSources[] = { lovrShaderFragmentPrefix, fragmentSource, lovrShaderFragmentSuffix };
+  const char* fragmentSources[] = { fragmentHeader, fragmentSinglepass, lovrShaderFragmentPrefix, fragmentSource, lovrShaderFragmentSuffix };
   GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentSources, sizeof(fragmentSources) / sizeof(fragmentSources[0]));
 
   // Link
@@ -1795,7 +1800,10 @@ void lovrShaderBind(Shader* shader) {
   Uniform* uniform;
   int i;
 
+  lovrGpuUseProgram(shader->program);
+
   // Figure out if we need to wait for pending writes on resources to complete
+#ifndef EMSCRIPTEN
   uint8_t flags = 0;
   vec_foreach_ptr(&shader->blocks[BLOCK_STORAGE], block, i) {
     if (block->source && (block->source->incoherent >> BARRIER_BLOCK) & 1) {
@@ -1828,7 +1836,8 @@ void lovrShaderBind(Shader* shader) {
     }
   }
 
-  lovrGpuWait(flags);
+  lovrGpuSync(flags);
+#endif
 
   // Bind uniforms
   vec_foreach_ptr(&shader->uniforms, uniform, i) {
@@ -1868,6 +1877,7 @@ void lovrShaderBind(Shader* shader) {
         break;
 
       case UNIFORM_IMAGE:
+#ifndef EMSCRIPTEN
         for (int i = 0; i < count; i++) {
           Image* image = &uniform->value.images[i];
           Texture* texture = image->texture;
@@ -1875,14 +1885,15 @@ void lovrShaderBind(Shader* shader) {
 
           // If the Shader can write to the texture, mark it as incoherent
           if (texture && image->access != ACCESS_READ) {
-            texture->incoherent |= 1 << BARRIER_UNIFORM_TEXTURE;
-            texture->incoherent |= 1 << BARRIER_UNIFORM_IMAGE;
-            texture->incoherent |= 1 << BARRIER_TEXTURE;
-            texture->incoherent |= 1 << BARRIER_CANVAS;
+            for (Barrier barrier = BARRIER_BLOCK + 1; barrier < MAX_BARRIERS; barrier++) {
+              texture->incoherent |= 1 << barrier;
+              vec_push(&state.incoherents[barrier], texture);
+            }
           }
 
           lovrGpuBindImage(image, uniform->baseSlot + i);
         }
+#endif
         break;
 
       case UNIFORM_SAMPLER:
@@ -1903,6 +1914,7 @@ void lovrShaderBind(Shader* shader) {
         // If the Shader can write to the block, mark it as incoherent
         bool writable = type == BLOCK_STORAGE && block->access != ACCESS_READ;
         block->source->incoherent |= writable ? (1 << BARRIER_BLOCK) : 0;
+        vec_push(&state.incoherents[BARRIER_BLOCK], block->source);
         lovrShaderBlockUnmap(block->source);
         lovrGpuBindBlockBuffer(type, block->source->buffer, block->slot);
       } else {
@@ -1970,6 +1982,11 @@ void lovrShaderSetImages(Shader* shader, const char* name, Image* data, int star
   lovrShaderSetUniform(shader, name, UNIFORM_IMAGE, data, start, count, sizeof(Image), "image");
 }
 
+void lovrShaderSetColor(Shader* shader, const char* name, Color color) {
+  gammaCorrectColor(&color);
+  lovrShaderSetUniform(shader, name, UNIFORM_FLOAT, (float*) &color, 0, 4, sizeof(float), "float");
+}
+
 void lovrShaderSetBlock(Shader* shader, const char* name, ShaderBlock* source, UniformAccess access) {
   int* id = map_get(&shader->blockMap, name);
   lovrAssert(id, "No shader block named '%s'", name);
@@ -2005,7 +2022,7 @@ ShaderBlock* lovrShaderBlockCreate(vec_uniform_t* uniforms, BlockType type, Buff
   ShaderBlock* block = lovrAlloc(ShaderBlock, lovrShaderBlockDestroy);
   if (!block) return NULL;
 
-  lovrAssert(type != BLOCK_STORAGE || lovrGraphicsGetSupported().writableBlocks, "Writable ShaderBlocks are not supported on this system");
+  lovrAssert(type != BLOCK_STORAGE || state.features.computeShaders, "Writable ShaderBlocks are not supported on this system");
 
   vec_init(&block->uniforms);
   vec_extend(&block->uniforms, uniforms);
@@ -2043,15 +2060,15 @@ ShaderBlock* lovrShaderBlockCreate(vec_uniform_t* uniforms, BlockType type, Buff
   block->data = calloc(1, size);
 
   glGenBuffers(1, &block->buffer);
-  lovrGpuBindBlockBuffer(block->type, block->buffer, 0);
-  glBufferData(block->target, size, NULL, usage);
+  glBindBuffer(block->target, block->buffer);
+  glBufferData(block->target, size, NULL, block->usage);
 
   return block;
 }
 
 void lovrShaderBlockDestroy(void* ref) {
   ShaderBlock* block = ref;
-  lovrGpuCleanupIncoherentResource(block, block->incoherent);
+  lovrGpuDestroySyncResource(block, block->incoherent);
   glDeleteBuffers(1, &block->buffer);
   vec_deinit(&block->uniforms);
   map_deinit(&block->uniformMap);
@@ -2124,7 +2141,7 @@ void lovrShaderBlockUnmap(ShaderBlock* block) {
     return;
   }
 
-  lovrGpuBindBlockBuffer(block->type, block->buffer, 0);
+  glBindBuffer(block->target, block->buffer);
   glBufferData(block->target, block->size, NULL, block->usage);
   glBufferSubData(block->target, 0, block->size, block->data);
   block->mapped = false;
@@ -2198,7 +2215,7 @@ void lovrMeshDetachAttribute(Mesh* mesh, const char* name) {
   map_remove(&mesh->attachments, name);
 }
 
-void lovrMeshBind(Mesh* mesh, Shader* shader) {
+void lovrMeshBind(Mesh* mesh, Shader* shader, int divisorMultiplier) {
   const char* key;
   map_iter_t iter = map_iter(&mesh->attachments);
 
@@ -2242,7 +2259,7 @@ void lovrMeshBind(Mesh* mesh, Shader* shader) {
     }
 
     if (previous.divisor != current.divisor) {
-      glVertexAttribDivisor(i, current.divisor);
+      glVertexAttribDivisor(i, current.divisor * divisorMultiplier);
     }
 
     if (previous.mesh != current.mesh || previous.attributeIndex != current.attributeIndex) {
@@ -2259,13 +2276,37 @@ void lovrMeshBind(Mesh* mesh, Shader* shader) {
           break;
 
         case ATTR_INT:
-          glVertexAttribIPointer(i, attribute.count, GL_UNSIGNED_INT, format->stride, (void*) attribute.offset);
+          glVertexAttribIPointer(i, attribute.count, GL_INT, format->stride, (void*) attribute.offset);
           break;
       }
     }
 
     mesh->layout[i] = current;
   }
+}
+
+void lovrMeshDraw(Mesh* mesh, int instances) {
+  GLenum glDrawMode = convertMeshDrawMode(lovrMeshGetDrawMode(mesh));
+
+  if (mesh->indexCount > 0) {
+    size_t count = mesh->rangeCount ? mesh->rangeCount : mesh->indexCount;
+    GLenum indexType = mesh->indexSize == sizeof(uint16_t) ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT;
+    size_t offset = mesh->rangeStart * mesh->indexSize;
+    if (instances > 1) {
+      glDrawElementsInstanced(glDrawMode, count, indexType, (GLvoid*) offset, instances);
+    } else {
+      glDrawElements(glDrawMode, count, indexType, (GLvoid*) offset);
+    }
+  } else {
+    size_t count = mesh->rangeCount ? mesh->rangeCount : lovrMeshGetVertexCount(mesh);
+    if (instances > 1) {
+      glDrawArraysInstanced(glDrawMode, mesh->rangeStart, count, instances);
+    } else {
+      glDrawArrays(glDrawMode, mesh->rangeStart, count);
+    }
+  }
+
+  state.stats.drawCalls++;
 }
 
 VertexFormat* lovrMeshGetVertexFormat(Mesh* mesh) {

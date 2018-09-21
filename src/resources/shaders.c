@@ -1,42 +1,19 @@
 #include "resources/shaders.h"
 
-const char* lovrShaderScalarUniforms[] = {
-  "lovrMetalness",
-  "lovrRoughness"
-};
-
-const char* lovrShaderColorUniforms[] = {
-  "lovrDiffuseColor",
-  "lovrEmissiveColor"
-};
-
-const char* lovrShaderTextureUniforms[] = {
-  "lovrDiffuseTexture",
-  "lovrEmissiveTexture",
-  "lovrMetalnessTexture",
-  "lovrRoughnessTexture",
-  "lovrOcclusionTexture",
-  "lovrNormalTexture",
-  "lovrEnvironmentTexture"
-};
-
 const char* lovrShaderVertexPrefix = ""
-#ifdef EMSCRIPTEN
-"#version 300 es \n"
-"precision mediump float; \n"
-#else
-"#version 150 \n"
-"#ifdef GL_NV_stereo_view_rendering \n"
-"#extension GL_NV_viewport_array2 : enable \n"
-"#extension GL_NV_stereo_view_rendering : enable \n"
-"#endif \n"
-#endif
 "#define VERTEX VERTEX \n"
 "#define MAX_BONES 48 \n"
-"#define lovrView lovrViews[lovrEye] \n"
-"#define lovrProjection lovrProjections[lovrEye] \n"
-"#define lovrTransform lovrTransforms[lovrEye] \n"
-"#define lovrNormalMatrix lovrNormalMatrices[lovrEye] \n"
+"#define lovrView lovrViews[lovrViewportIndex] \n"
+"#define lovrProjection lovrProjections[lovrViewportIndex] \n"
+"#define lovrTransform lovrTransforms[lovrViewportIndex] \n"
+"#define lovrNormalMatrix lovrNormalMatrices[lovrViewportIndex] \n"
+"#define lovrInstanceID (gl_InstanceID / lovrViewportCount) \n"
+"#define lovrPoseMatrix ("
+  "lovrPose[lovrBones[0]] * lovrBoneWeights[0] +"
+  "lovrPose[lovrBones[1]] * lovrBoneWeights[1] +"
+  "lovrPose[lovrBones[2]] * lovrBoneWeights[2] +"
+  "lovrPose[lovrBones[3]] * lovrBoneWeights[3]"
+  ") \n"
 "in vec3 lovrPosition; \n"
 "in vec3 lovrNormal; \n"
 "in vec2 lovrTexCoord; \n"
@@ -46,7 +23,6 @@ const char* lovrShaderVertexPrefix = ""
 "in vec4 lovrBoneWeights; \n"
 "out vec2 texCoord; \n"
 "out vec4 vertexColor; \n"
-"uniform int lovrEye; \n"
 "uniform mat4 lovrModel; \n"
 "uniform mat4 lovrViews[2]; \n"
 "uniform mat4 lovrProjections[2]; \n"
@@ -55,40 +31,26 @@ const char* lovrShaderVertexPrefix = ""
 "uniform mat3 lovrMaterialTransform; \n"
 "uniform float lovrPointSize; \n"
 "uniform mat4 lovrPose[MAX_BONES]; \n"
+"uniform int lovrViewportCount; \n"
+"#if SINGLEPASS \n"
+"#define lovrViewportIndex gl_ViewportIndex \n"
+"#else \n"
+"uniform int lovrViewportIndex; \n"
+"#endif \n"
 "#line 0 \n";
 
 const char* lovrShaderVertexSuffix = ""
 "void main() { \n"
 "  texCoord = (lovrMaterialTransform * vec3(lovrTexCoord, 1.)).xy; \n"
 "  vertexColor = lovrVertexColor; \n"
-"  mat4 pose = \n"
-"    lovrPose[lovrBones[0]] * lovrBoneWeights[0] + \n"
-"    lovrPose[lovrBones[1]] * lovrBoneWeights[1] + \n"
-"    lovrPose[lovrBones[2]] * lovrBoneWeights[2] + \n"
-"    lovrPose[lovrBones[3]] * lovrBoneWeights[3]; \n"
-"  gl_PointSize = lovrPointSize; \n"
-"#if defined(GL_NV_viewport_array2) && defined(GL_NV_stereo_view_rendering) \n"
-"  if (lovrEye < 0) { \n"
-"    gl_Position = position(lovrProjections[0], lovrTransforms[0], pose * vec4(lovrPosition, 1.0)); \n"
-"    gl_SecondaryPositionNV = position(lovrProjections[1], lovrTransforms[1], pose * vec4(lovrPosition, 1.0)); \n"
-"    gl_ViewportMask[0] = (1 << 0); \n"
-"    gl_SecondaryViewportMaskNV[0] = (1 << 1); \n"
-"    return; \n"
-"  }\n"
+"#if SINGLEPASS \n"
+"  gl_ViewportIndex = gl_InstanceID % lovrViewportCount; \n"
 "#endif \n"
-"  gl_Position = position(lovrProjection, lovrTransform, pose * vec4(lovrPosition, 1.0)); \n"
+"  gl_PointSize = lovrPointSize; \n"
+"  gl_Position = position(lovrProjection, lovrTransform, vec4(lovrPosition, 1.0)); \n"
 "}";
 
 const char* lovrShaderFragmentPrefix = ""
-#ifdef EMSCRIPTEN
-"#version 300 es \n"
-"precision mediump float; \n"
-#else
-"#version 150 \n"
-"#extension GL_NV_viewport_array2 : enable \n"
-"#extension GL_ARB_fragment_layer_viewport : enable \n"
-"in vec4 gl_FragCoord; \n"
-#endif
 "#define PIXEL PIXEL \n"
 "#define FRAGMENT FRAGMENT \n"
 "in vec2 texCoord; \n"
@@ -106,6 +68,12 @@ const char* lovrShaderFragmentPrefix = ""
 "uniform sampler2D lovrOcclusionTexture; \n"
 "uniform sampler2D lovrNormalTexture; \n"
 "uniform samplerCube lovrEnvironmentTexture; \n"
+"uniform int lovrViewportCount; \n"
+"#if SINGLEPASS \n"
+"#define lovrViewportIndex gl_ViewportIndex \n"
+"#else \n"
+"uniform int lovrViewportIndex; \n"
+"#endif \n"
 "#line 0 \n";
 
 const char* lovrShaderFragmentSuffix = ""
@@ -137,25 +105,25 @@ const char* lovrDefaultFragmentShader = ""
 "}";
 
 const char* lovrCubeVertexShader = ""
-"out vec3 texturePosition; \n"
+"out vec3 texturePosition[2]; \n"
 "vec4 position(mat4 projection, mat4 transform, vec4 vertex) { \n"
-"  texturePosition = inverse(mat3(transform)) * (inverse(projection) * vertex).xyz; \n"
-"  texturePosition.y *= -1.; \n"
+"  texturePosition[lovrViewportIndex] = inverse(mat3(transform)) * (inverse(projection) * vertex).xyz; \n"
 "  return vertex; \n"
 "}";
 
 const char* lovrCubeFragmentShader = ""
-"in vec3 texturePosition; \n"
+"in vec3 texturePosition[2]; \n"
 "vec4 color(vec4 graphicsColor, sampler2D image, vec2 uv) { \n"
-"  return graphicsColor * texture(lovrEnvironmentTexture, texturePosition); \n"
+"  return graphicsColor * texture(lovrEnvironmentTexture, texturePosition[lovrViewportIndex] * vec3(-1, 1, 1)); \n"
 "}";
 
 const char* lovrPanoFragmentShader = ""
-"in vec3 texturePosition; \n"
+"in vec3 texturePosition[2]; \n"
 "#define PI 3.141592653589 \n"
 "vec4 color(vec4 graphicsColor, sampler2D image, vec2 uv) { \n"
-"  float theta = acos(texturePosition.y / length(texturePosition)); \n"
-"  float phi = atan(texturePosition.x, texturePosition.z); \n"
+"  vec3 direction = texturePosition[lovrViewportIndex]; \n"
+"  float theta = acos(-direction.y / length(direction)); \n"
+"  float phi = atan(direction.x, -direction.z); \n"
 "  uv = vec2(.5 + phi / (2. * PI), theta / PI); \n"
 "  return graphicsColor * texture(lovrDiffuseTexture, uv); \n"
 "}";
@@ -176,3 +144,23 @@ const char* lovrFillVertexShader = ""
 "vec4 position(mat4 projection, mat4 transform, vec4 vertex) { \n"
 "  return vertex; \n"
 "}";
+
+const char* lovrShaderScalarUniforms[] = {
+  "lovrMetalness",
+  "lovrRoughness"
+};
+
+const char* lovrShaderColorUniforms[] = {
+  "lovrDiffuseColor",
+  "lovrEmissiveColor"
+};
+
+const char* lovrShaderTextureUniforms[] = {
+  "lovrDiffuseTexture",
+  "lovrEmissiveTexture",
+  "lovrMetalnessTexture",
+  "lovrRoughnessTexture",
+  "lovrOcclusionTexture",
+  "lovrNormalTexture",
+  "lovrEnvironmentTexture"
+};

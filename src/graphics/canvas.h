@@ -1,25 +1,40 @@
 #include "graphics/texture.h"
-#include "data/textureData.h"
-#include <stdbool.h>
 
 #pragma once
 
-#define MAX_CANVASES 4
+#define MAX_CANVAS_ATTACHMENTS 4
+
+typedef enum {
+  DEPTH_D16,
+  DEPTH_D32F,
+  DEPTH_D24S8,
+  DEPTH_NONE
+} DepthFormat;
 
 typedef struct {
+  Texture* texture;
+  int slice;
+  int level;
+} Attachment;
+
+typedef struct {
+  DepthFormat depth;
+  bool stereo;
   int msaa;
-  bool depth;
-  bool stencil;
   bool mipmaps;
 } CanvasFlags;
 
 typedef struct Canvas Canvas;
 
-bool lovrCanvasSupportsFormat(TextureFormat format);
-
-Canvas* lovrCanvasCreate(int width, int height, TextureFormat format, CanvasFlags flags);
+Canvas* lovrCanvasCreate(int width, int height, CanvasFlags flags);
 void lovrCanvasDestroy(void* ref);
+const Attachment* lovrCanvasGetAttachments(Canvas* canvas, int* count);
+void lovrCanvasSetAttachments(Canvas* canvas, Attachment* attachments, int count);
+void lovrCanvasBind(Canvas* canvas, bool willDraw);
 void lovrCanvasResolve(Canvas* canvas);
-TextureFormat lovrCanvasGetFormat(Canvas* canvas);
+bool lovrCanvasIsStereo(Canvas* canvas);
+int lovrCanvasGetWidth(Canvas* canvas);
+int lovrCanvasGetHeight(Canvas* canvas);
 int lovrCanvasGetMSAA(Canvas* canvas);
-TextureData* lovrCanvasNewTextureData(Canvas* canvas);
+DepthFormat lovrCanvasGetDepthFormat(Canvas* canvas);
+TextureData* lovrCanvasNewTextureData(Canvas* canvas, int index);

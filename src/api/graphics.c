@@ -63,6 +63,13 @@ const char* CompareModes[] = {
   NULL
 };
 
+const char* DepthFormats[] = {
+  [DEPTH_D16] = "d16",
+  [DEPTH_D32F] = "d32f",
+  [DEPTH_D24S8] = "d24s8",
+  NULL
+};
+
 const char* DrawModes[] = {
   [DRAW_MODE_FILL] = "fill",
   [DRAW_MODE_LINE] = "line",
@@ -231,12 +238,12 @@ static void stencilCallback(void* userdata) {
   lua_call(L, 0, 0);
 }
 
-static TextureData* luax_checktexturedata(lua_State* L, int index) {
+static TextureData* luax_checktexturedata(lua_State* L, int index, bool flip) {
   TextureData* textureData = luax_totype(L, index, TextureData);
 
   if (!textureData) {
     Blob* blob = luax_readblob(L, index, "Texture");
-    textureData = lovrTextureDataFromBlob(blob);
+    textureData = lovrTextureDataCreateFromBlob(blob, flip);
     lovrRelease(blob);
   }
 
@@ -256,16 +263,16 @@ int l_lovrGraphicsInit(lua_State* L) {
   luax_registertype(L, "Shader", lovrShader);
   luax_registertype(L, "ShaderBlock", lovrShaderBlock);
   luax_registertype(L, "Texture", lovrTexture);
-  luax_extendtype(L, "Texture", "Canvas", lovrTexture, lovrCanvas);
-  lovrGraphicsInit();
+  luax_registertype(L, "Canvas", lovrCanvas);
 
   luax_pushconf(L);
 
-  // Set gamma correct
+  // Gamma correct
   lua_getfield(L, -1, "gammacorrect");
   bool gammaCorrect = lua_toboolean(L, -1);
-  lovrGraphicsSetGammaCorrect(gammaCorrect);
   lua_pop(L, 1);
+
+  lovrGraphicsInit(gammaCorrect);
 
   // Create window if needed
   lua_getfield(L, -1, "window");
@@ -319,47 +326,41 @@ int l_lovrGraphicsCreateWindow(lua_State* L) {
 }
 
 int l_lovrGraphicsGetWidth(lua_State* L) {
-  int width;
-  lovrGraphicsGetDimensions(&width, NULL);
-  lua_pushnumber(L, width);
+  lua_pushnumber(L, lovrGraphicsGetWidth());
   return 1;
 }
 
 int l_lovrGraphicsGetHeight(lua_State* L) {
-  int height;
-  lovrGraphicsGetDimensions(NULL, &height);
-  lua_pushnumber(L, height);
+  lua_pushnumber(L, lovrGraphicsGetHeight());
   return 1;
 }
 
 int l_lovrGraphicsGetDimensions(lua_State* L) {
-  int width, height;
-  lovrGraphicsGetDimensions(&width, &height);
-  lua_pushnumber(L, width);
-  lua_pushnumber(L, height);
+  lua_pushnumber(L, lovrGraphicsGetWidth());
+  lua_pushnumber(L, lovrGraphicsGetHeight());
   return 2;
 }
 
 int l_lovrGraphicsGetSupported(lua_State* L) {
-  GraphicsFeatures features = lovrGraphicsGetSupported();
+  const GpuFeatures* features = lovrGraphicsGetSupported();
   lua_newtable(L);
-  lua_pushboolean(L, features.computeShaders);
+  lua_pushboolean(L, features->computeShaders);
   lua_setfield(L, -2, "computeshaders");
-  lua_pushboolean(L, features.writableBlocks);
-  lua_setfield(L, -2, "writableblocks");
+  lua_pushboolean(L, features->singlepass);
+  lua_setfield(L, -2, "singlepass");
   return 1;
 }
 
 int l_lovrGraphicsGetSystemLimits(lua_State* L) {
-  GraphicsLimits limits = lovrGraphicsGetLimits();
+  const GpuLimits* limits = lovrGraphicsGetLimits();
   lua_newtable(L);
-  lua_pushnumber(L, limits.pointSizes[1]);
+  lua_pushnumber(L, limits->pointSizes[1]);
   lua_setfield(L, -2, "pointsize");
-  lua_pushinteger(L, limits.textureSize);
+  lua_pushinteger(L, limits->textureSize);
   lua_setfield(L, -2, "texturesize");
-  lua_pushinteger(L, limits.textureMSAA);
+  lua_pushinteger(L, limits->textureMSAA);
   lua_setfield(L, -2, "texturemsaa");
-  lua_pushinteger(L, limits.textureAnisotropy);
+  lua_pushinteger(L, limits->textureAnisotropy);
   lua_setfield(L, -2, "anisotropy");
   return 1;
 }
@@ -372,14 +373,11 @@ int l_lovrGraphicsGetStats(lua_State* L) {
     lua_createtable(L, 0, 2);
   }
 
-  GraphicsStats stats = lovrGraphicsGetStats();
-
-  lua_pushinteger(L, stats.drawCalls);
+  const GpuStats* stats = lovrGraphicsGetStats();
+  lua_pushinteger(L, stats->drawCalls);
   lua_setfield(L, 1, "drawcalls");
-
-  lua_pushinteger(L, stats.shaderSwitches);
+  lua_pushinteger(L, stats->shaderSwitches);
   lua_setfield(L, 1, "shaderswitches");
-
   return 1;
 }
 
@@ -426,22 +424,14 @@ int l_lovrGraphicsSetBlendMode(lua_State* L) {
 }
 
 int l_lovrGraphicsGetCanvas(lua_State* L) {
-  Canvas* canvas[MAX_CANVASES];
-  int count;
-  lovrGraphicsGetCanvas(canvas, &count);
-  for (int i = 0; i < count; i++) {
-    luax_pushobject(L, canvas[i]);
-  }
-  return count;
+  Canvas* canvas = lovrGraphicsGetCanvas();
+  luax_pushobject(L, canvas);
+  return 1;
 }
 
 int l_lovrGraphicsSetCanvas(lua_State* L) {
-  Canvas* canvas[MAX_CANVASES];
-  int count = MIN(lua_gettop(L), MAX_CANVASES);
-  for (int i = 0; i < count; i++) {
-    canvas[i] = luax_checktype(L, i + 1, Canvas);
-  }
-  lovrGraphicsSetCanvas(canvas, count);
+  Canvas* canvas = lua_isnoneornil(L, 1) ? NULL : luax_checktype(L, 1, Canvas);
+  lovrGraphicsSetCanvas(canvas);
   return 0;
 }
 
@@ -826,7 +816,7 @@ int l_lovrGraphicsSphere(lua_State* L) {
 }
 
 int l_lovrGraphicsSkybox(lua_State* L) {
-  Texture* texture = luax_checktype(L, 1, Texture);
+  Texture* texture = luax_checktexture(L, 1);
   float angle = luaL_optnumber(L, 2, 0);
   float ax = luaL_optnumber(L, 3, 0);
   float ay = luaL_optnumber(L, 4, 1);
@@ -861,7 +851,7 @@ int l_lovrGraphicsStencil(lua_State* L) {
 }
 
 int l_lovrGraphicsFill(lua_State* L) {
-  Texture* texture = luax_checktype(L, 1, Texture);
+  Texture* texture = lua_isnoneornil(L, 1) ? NULL : luax_checktexture(L, 1);
   lovrGraphicsFill(texture);
   return 0;
 }
@@ -939,37 +929,81 @@ int l_lovrGraphicsNewShaderBlock(lua_State* L) {
 }
 
 int l_lovrGraphicsNewCanvas(lua_State* L) {
-  int width = luaL_checkinteger(L, 1);
-  int height = luaL_checkinteger(L, 2);
-  luaL_argcheck(L, width > 0, 1, "width must be positive");
-  luaL_argcheck(L, height > 0, 2, "height must be positive");
+  Attachment attachments[MAX_CANVAS_ATTACHMENTS];
+  int attachmentCount = 0;
+  int width = 0;
+  int height = 0;
+  int index;
 
-  TextureFormat format = FORMAT_RGBA;
-  CanvasFlags flags = { .msaa = 0, .depth = true, .stencil = false, .mipmaps = true };
-
-  if (lua_istable(L, 3)) {
-    lua_getfield(L, 3, "format");
-    format = luaL_checkoption(L, -1, "rgba", TextureFormats);
-    lua_pop(L, 1);
-
-    lua_getfield(L, 3, "msaa");
-    flags.msaa = luaL_optinteger(L, -1, 0);
-    lua_pop(L, 1);
-
-    lua_getfield(L, 3, "depth");
-    flags.depth = lua_toboolean(L, -1);
-    lua_pop(L, 1);
-
-    lua_getfield(L, 3, "stencil");
-    flags.stencil = lua_toboolean(L, -1);
-    lua_pop(L, 1);
-
-    lua_getfield(L, 3, "mipmaps");
-    flags.mipmaps = lua_toboolean(L, -1);
-    lua_pop(L, 1);
+  if (luax_totype(L, 1, Texture)) {
+    for (index = 1; index <= MAX_CANVAS_ATTACHMENTS; index++) {
+      Texture* texture = luax_totype(L, index, Texture);
+      if (!texture) break;
+      attachments[attachmentCount++] = (Attachment) { texture, 0, 0 };
+    }
+  } else if (lua_istable(L, 1)) {
+    luax_readattachments(L, 1, attachments, &attachmentCount);
+    index = 2;
+  } else {
+    width = luaL_checkinteger(L, 1);
+    height = luaL_checkinteger(L, 2);
+    index = 3;
   }
 
-  Canvas* canvas = lovrCanvasCreate(width, height, format, flags);
+  CanvasFlags flags = { .depth = DEPTH_D16, .stereo = true, .msaa = 0, .mipmaps = true };
+  TextureFormat format = FORMAT_RGBA;
+  bool anonymous = attachmentCount == 0;
+
+  if (lua_istable(L, index)) {
+    lua_getfield(L, index, "depth");
+    switch (lua_type(L, -1)) {
+      case LUA_TNIL: break;
+      case LUA_TBOOLEAN: flags.depth = lua_toboolean(L, -1) ? DEPTH_D16 : DEPTH_NONE; break;
+      default: flags.depth = luaL_checkoption(L, -1, NULL, DepthFormats);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, index, "stereo");
+    flags.stereo = lua_isnil(L, -1) ? flags.stereo : lua_toboolean(L, -1);
+    lua_pop(L, 1);
+
+    lua_getfield(L, index, "msaa");
+    flags.msaa = lua_isnil(L, -1) ? flags.msaa : luaL_checkinteger(L, -1);
+    lua_pop(L, 1);
+
+    lua_getfield(L, index, "mipmaps");
+    flags.mipmaps = lua_isnil(L, -1) ? flags.mipmaps : lua_toboolean(L, -1);
+    lua_pop(L, 1);
+
+    if (attachmentCount == 0) {
+      lua_getfield(L, index, "format");
+      format = luaL_checkoption(L, -1, "rgba", TextureFormats);
+      anonymous = lua_isnil(L, -1) || lua_toboolean(L, -1);
+      lua_pop(L, 1);
+    }
+  }
+
+  if (anonymous) {
+    Texture* texture = lovrTextureCreate(TEXTURE_2D, NULL, 0, true, flags.mipmaps, flags.msaa);
+    lovrTextureAllocate(texture, width, height, 1, format);
+    attachments[0] = (Attachment) { texture, 0, 0 };
+    attachmentCount++;
+  }
+
+  if (width == 0 && height == 0 && attachmentCount > 0) {
+    width = lovrTextureGetWidth(attachments[0].texture, attachments[0].level);
+    height = lovrTextureGetHeight(attachments[0].texture, attachments[0].level);
+  }
+
+  Canvas* canvas = lovrCanvasCreate(width, height, flags);
+
+  if (attachmentCount > 0) {
+    lovrCanvasSetAttachments(canvas, attachments, attachmentCount);
+    if (anonymous) {
+      lovrRelease(attachments[0].texture);
+    }
+  }
+
   luax_pushobject(L, canvas);
   lovrRelease(canvas);
   return 1;
@@ -1007,14 +1041,14 @@ int l_lovrGraphicsNewMaterial(lua_State* L) {
 
   if (lua_type(L, index) == LUA_TSTRING) {
     Blob* blob = luax_readblob(L, index++, "Texture");
-    TextureData* textureData = lovrTextureDataFromBlob(blob);
-    Texture* texture = lovrTextureCreate(TEXTURE_2D, &textureData, 1, true, true);
+    TextureData* textureData = lovrTextureDataCreateFromBlob(blob, true);
+    Texture* texture = lovrTextureCreate(TEXTURE_2D, &textureData, 1, true, true, 0);
     lovrMaterialSetTexture(material, TEXTURE_DIFFUSE, texture);
     lovrRelease(blob);
     lovrRelease(textureData);
     lovrRelease(texture);
   } else if (lua_isuserdata(L, index)) {
-    Texture* texture = luax_checktype(L, index, Texture);
+    Texture* texture = luax_checktexture(L, index);
     lovrMaterialSetTexture(material, TEXTURE_DIFFUSE, texture);
     index++;
   }
@@ -1102,8 +1136,8 @@ int l_lovrGraphicsNewModel(lua_State* L) {
   if (lua_gettop(L) >= 2) {
     if (lua_type(L, 2) == LUA_TSTRING) {
       Blob* blob = luax_readblob(L, 2, "Texture");
-      TextureData* textureData = lovrTextureDataFromBlob(blob);
-      Texture* texture = lovrTextureCreate(TEXTURE_2D, &textureData, 1, true, true);
+      TextureData* textureData = lovrTextureDataCreateFromBlob(blob, true);
+      Texture* texture = lovrTextureCreate(TEXTURE_2D, &textureData, 1, true, true, 0);
       Material* material = lovrMaterialCreate();
       lovrMaterialSetTexture(material, TEXTURE_DIFFUSE, texture);
       lovrModelSetMaterial(model, material);
@@ -1167,57 +1201,83 @@ int l_lovrGraphicsNewComputeShader(lua_State* L) {
 }
 
 int l_lovrGraphicsNewTexture(lua_State* L) {
-  bool isTable = lua_istable(L, 1);
+  int index = 1;
+  int width, height, depth;
+  int argType = lua_type(L, index);
+  bool blank = argType == LUA_TNUMBER;
+  TextureType type = TEXTURE_2D;
 
-  if (!isTable) {
-    lua_newtable(L);
+  if (blank) {
+    width = lua_tointeger(L, index++);
+    height = luaL_checkinteger(L, index++);
+    depth = lua_type(L, index) == LUA_TNUMBER ? lua_tonumber(L, index++) : 0;
+    lovrAssert(width > 0 && height > 0, "A Texture must have a positive width, height, and depth");
+  } else if (argType != LUA_TTABLE) {
+    lua_createtable(L, 1, 0);
     lua_pushvalue(L, 1);
     lua_rawseti(L, -2, 1);
     lua_replace(L, 1);
+    depth = 1;
+    index++;
+  } else {
+    depth = lua_objlen(L, index++);
+    type = depth > 0 ? TEXTURE_ARRAY : TEXTURE_CUBE;
   }
 
-  int depth = lua_objlen(L, 1);
-  TextureType type = isTable ? (depth > 0 ? TEXTURE_ARRAY : TEXTURE_CUBE) : TEXTURE_2D;
-
-  bool hasFlags = lua_istable(L, 2);
-  bool srgb = true;
+  bool hasFlags = lua_istable(L, index);
+  bool srgb = !blank;
   bool mipmaps = true;
+  TextureFormat format = FORMAT_RGBA;
+  int msaa = 0;
 
   if (hasFlags) {
-    lua_getfield(L, 2, "linear");
+    lua_getfield(L, index, "linear");
     srgb = lua_isnil(L, -1) ? srgb : !lua_toboolean(L, -1);
     lua_pop(L, 1);
 
-    lua_getfield(L, 2, "mipmaps");
+    lua_getfield(L, index, "mipmaps");
     mipmaps = lua_isnil(L, -1) ? mipmaps : lua_toboolean(L, -1);
     lua_pop(L, 1);
 
-    lua_getfield(L, 2, "type");
+    lua_getfield(L, index, "type");
     type = lua_isnil(L, -1) ? type : luaL_checkoption(L, -1, NULL, TextureTypes);
     lua_pop(L, 1);
-  }
 
-  if (type == TEXTURE_CUBE && depth == 0) {
-    depth = 6;
-    const char* faces[6] = { "right", "left", "top", "bottom", "back", "front" };
-    for (int i = 0; i < 6; i++) {
-      lua_pushstring(L, faces[i]);
-      lua_rawget(L, 1);
-      lua_rawseti(L, 1, i + 1);
-    }
-  }
-
-  Texture* texture = lovrTextureCreate(type, NULL, 0, srgb, mipmaps);
-
-  for (int i = 0; i < depth; i++) {
-    lua_rawgeti(L, 1, i + 1);
-    TextureData* textureData = luax_checktexturedata(L, -1);
-    if (i == 0) {
-      lovrTextureAllocate(texture, textureData->width, textureData->height, depth, textureData->format);
-    }
-    lovrTextureReplacePixels(texture, textureData, 0, 0, i, 0);
-    lovrRelease(textureData);
+    lua_getfield(L, index, "format");
+    format = lua_isnil(L, -1) ? format : luaL_checkoption(L, -1, NULL, TextureFormats);
     lua_pop(L, 1);
+
+    lua_getfield(L, index, "msaa");
+    msaa = lua_isnil(L, -1) ? msaa : luaL_checkinteger(L, -1);
+    lua_pop(L, 1);
+  }
+
+  Texture* texture = lovrTextureCreate(type, NULL, 0, srgb, mipmaps, msaa);
+
+  if (blank) {
+    depth = depth ? depth : (type == TEXTURE_CUBE ? 6 : 1);
+    lovrTextureAllocate(texture, width, height, depth, format);
+  } else {
+    if (type == TEXTURE_CUBE && depth == 0) {
+      depth = 6;
+      const char* faces[6] = { "right", "left", "top", "bottom", "back", "front" };
+      for (int i = 0; i < 6; i++) {
+        lua_pushstring(L, faces[i]);
+        lua_rawget(L, 1);
+        lua_rawseti(L, 1, i + 1);
+      }
+    }
+
+    for (int i = 0; i < depth; i++) {
+      lua_rawgeti(L, 1, i + 1);
+      TextureData* textureData = luax_checktexturedata(L, -1, type != TEXTURE_CUBE);
+      if (i == 0) {
+        lovrTextureAllocate(texture, textureData->width, textureData->height, depth, textureData->format);
+      }
+      lovrTextureReplacePixels(texture, textureData, 0, 0, i, 0);
+      lovrRelease(textureData);
+      lua_pop(L, 1);
+    }
   }
 
   luax_pushobject(L, texture);
