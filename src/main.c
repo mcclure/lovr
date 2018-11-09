@@ -42,8 +42,13 @@ int main(int argc, char** argv) {
     emscripten_set_main_loop_arg(emscriptenLoop, (void*) &context, 0, 1);
     return 0;
 #else
+    bool wait = false;
+
     while (lua_resume(T, 0) == LUA_YIELD) {
-      lovrSleep(.001);
+      if (wait)
+        lovrSleep(.001);
+      else
+        wait = true;
     }
 
     restart = lua_type(T, -1) == LUA_TSTRING && !strcmp(lua_tostring(T, -1), "restart");
