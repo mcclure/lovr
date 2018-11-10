@@ -169,6 +169,7 @@ static float oculusMobileControllerGetAxis(Controller* controller, ControllerAxi
     case CONTROLLER_AXIS_TOUCHPAD_Y:
       return (bridgeLovrMobileData.updateData.goTrackpad.y-160)/160.0;
   }
+  return 0;
 }
 
 static bool buttonCheck(BridgeLovrButton field, ControllerButton button) {
@@ -182,7 +183,6 @@ static bool buttonCheck(BridgeLovrButton field, ControllerButton button) {
     default:
       return false;
   }
-
 }
 
 static bool oculusMobileControllerIsDown(Controller* controller, ControllerButton button) {
@@ -387,13 +387,10 @@ static void physCopyFiles(sds toDir, sds fromDir) {
   PHYSFS_freeList(filesOrig);
 }
 
-static void android_vthrow(lua_State* L, const char* format, ...) {
+static void android_vthrow(lua_State* L, const char* format, va_list args) {
   #define MAX_ERROR_LENGTH 1024
   char lovrErrorMessage[MAX_ERROR_LENGTH];
-  va_list args;
-  va_start(args, format);
   vsnprintf(lovrErrorMessage, MAX_ERROR_LENGTH, format, args);
-  va_end(args);
   __android_log_print(ANDROID_LOG_FATAL, "LOVR", "Error: %s\n", lovrErrorMessage);
   assert(0);
 }
@@ -405,6 +402,19 @@ static int luax_preloadmodule(lua_State* L, const char* key, lua_CFunction f) {
   lua_setfield(L, -2, key);
   lua_pop(L, 2);
   return 0;
+}
+
+static int luax_custom_atpanic(lua_State *L)
+{
+    const char *msg = lua_tostring(L, -1);
+    const char *tb = "\nNo traceback";
+    if (luax_push_traceback(L)) {
+      tb = lua_tostring(L, -1);
+    }
+    lovrThrow("Lua panic: %s%s", msg, tb);
+    //__android_log_print(ANDROID_LOG_FATAL, "LOVR", "Lua panic: %s%s", msg, tb);
+    //assert(0);
+    return 0;
 }
 
 void bridgeLovrInit(BridgeLovrInitData *initData) {
@@ -483,6 +493,7 @@ void bridgeLovrInit(BridgeLovrInitData *initData) {
   // Copypaste the init sequence from lovrRun:
   // Load libraries
   L = luaL_newstate(); // FIXME: Just call main?
+  lua_atpanic(L, luax_custom_atpanic);
   luaL_openlibs(L);
   __android_log_print(ANDROID_LOG_DEBUG, "LOVR", "\n OPENED LIB\n");
 
@@ -543,6 +554,7 @@ void bridgeLovrInit(BridgeLovrInitData *initData) {
 
   coroutineStartFunctionRef = luaL_ref(L, LUA_REGISTRYINDEX); // Value returned by boot.lua
   Lcoroutine = lua_newthread(L); // Leave L clear to be used by the draw function
+  lua_atpanic(Lcoroutine, luax_custom_atpanic);
   coroutineRef = luaL_ref(L, LUA_REGISTRYINDEX); // Hold on to the Lua-side coroutine object so it isn't GC'd
 
   __android_log_print(ANDROID_LOG_DEBUG, "LOVR", "\n BRIDGE INIT COMPLETE top %d\n", (int)lua_gettop(L));

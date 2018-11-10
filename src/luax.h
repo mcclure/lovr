@@ -23,3 +23,4 @@ int luax_getstack(lua_State* L);
 void luax_pushconf(lua_State* L);
 int luax_setconf(lua_State* L);
 Color luax_checkcolor(lua_State* L, int index);
+int luax_push_traceback(lua_State *L);
