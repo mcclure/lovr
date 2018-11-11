@@ -6,6 +6,7 @@
 #include "math/mat4.h"
 #include "lib/glad/glad.h"
 #include <assert.h>
+#include "platform.h"
 
 // Data passed from bridge code to headset code
 
@@ -22,27 +23,6 @@ static void (*renderCallback)(void*);
 static void* renderUserdata;
 
 static float offset;
-
-static void lovrOculusMobileDraw(int framebuffer, int width, int height, float *eyeViewMatrix, float *projectionMatrix) {
-  lovrGpuDirtyTexture();
-
-  CanvasFlags flags = {0};
-  Canvas *canvas = lovrCanvasCreateFromHandle(width, height, flags, framebuffer, 0, 0, 1, true);
-
-  Camera camera = { .canvas = canvas, .stereo = false };
-  memcpy(camera.viewMatrix[0], eyeViewMatrix, sizeof(camera.viewMatrix[0]));
-  mat4_translate(camera.viewMatrix[0], 0, -offset, 0);
-
-  memcpy(camera.projection[0], projectionMatrix, sizeof(camera.projection[0]));
-
-  lovrGraphicsSetCamera(&camera, true);
-
-  if (renderCallback)
-    renderCallback(renderUserdata);
-
-  lovrGraphicsSetCamera(NULL, false);
-  lovrRelease(canvas);
-}
 
 // Headset driver object
 
@@ -168,8 +148,11 @@ static float oculusMobileControllerGetAxis(Controller* controller, ControllerAxi
       return (bridgeLovrMobileData.updateData.goTrackpad.x-160)/160.0;
     case CONTROLLER_AXIS_TOUCHPAD_Y:
       return (bridgeLovrMobileData.updateData.goTrackpad.y-160)/160.0;
+    case CONTROLLER_AXIS_TRIGGER:
+      return bridgeLovrMobileData.updateData.goButtonDown ? 1.0 : 0.0;
+    default:
+      return 0;
   }
-  return 0;
 }
 
 static bool buttonCheck(BridgeLovrButton field, ControllerButton button) {
@@ -307,9 +290,10 @@ GLFWAPI void glfwGetFramebufferSize(GLFWwindow* window, int* width, int* height)
 extern unsigned char boot_lua[];
 extern unsigned int boot_lua_len;
 
-static lua_State* L, *Lcoroutine;
+static lua_State *L, *Lcoroutine;
 static int coroutineRef = LUA_NOREF;
 static int coroutineStartFunctionRef = LUA_NOREF;
+static int renderErrorRef = LUA_NOREF;
 
 // Expose to filesystem.h
 char *lovrOculusMobileWritablePath;
@@ -578,10 +562,54 @@ void bridgeLovrUpdate(BridgeLovrUpdateData *updateData) {
     luaL_unref (Lcoroutine, LUA_REGISTRYINDEX, coroutineStartFunctionRef);
     coroutineStartFunctionRef = LUA_NOREF; // No longer needed
   }
-  if (lua_resume(Lcoroutine, 0) != LUA_YIELD) {
+  bool haveRenderError = renderErrorRef != LUA_NOREF;
+  if (haveRenderError) {
+    lua_rawgeti(Lcoroutine, LUA_REGISTRYINDEX, renderErrorRef); // Pull t from registry
+    luaL_unref (Lcoroutine, LUA_REGISTRYINDEX, renderErrorRef);
+    lua_rawgeti (Lcoroutine, -1, 1);                      // t[1] was error message
+    lovrWarn("ERROR IS:%s", lua_tostring (Lcoroutine, -1));
+    lua_rawgeti (Lcoroutine, -2, 2);                      // t[2] was traceback
+    lovrWarn("TB IS:%s", lua_tostring (Lcoroutine, -1));
+    lua_remove(Lcoroutine, -3);                           // forget t
+    renderErrorRef = LUA_NOREF;
+  }
+  if (lua_resume(Lcoroutine, haveRenderError ? 2 : 0) != LUA_YIELD) {
     __android_log_print(ANDROID_LOG_DEBUG, "LOVR", "\n LUA QUIT\n");
     assert(0);
   }
+}
+
+static void lovrOculusMobileDraw(int framebuffer, int width, int height, float *eyeViewMatrix, float *projectionMatrix) {
+  lovrGpuDirtyTexture();
+
+  CanvasFlags flags = {0};
+  Canvas *canvas = lovrCanvasCreateFromHandle(width, height, flags, framebuffer, 0, 0, 1, true);
+
+  Camera camera = { .canvas = canvas, .stereo = false };
+  memcpy(camera.viewMatrix[0], eyeViewMatrix, sizeof(camera.viewMatrix[0]));
+  mat4_translate(camera.viewMatrix[0], 0, -offset, 0);
+
+  memcpy(camera.projection[0], projectionMatrix, sizeof(camera.projection[0]));
+
+  lovrGraphicsSetCamera(&camera, true);
+
+  if (renderUserdata && renderErrorRef == LUA_NOREF) { // Don't render if a render error occurred
+    int fn = lovrHeadsetExtractFn(renderUserdata);
+    lua_rawgeti(L, LUA_REGISTRYINDEX, fn);
+    int err = lua_pcall(L, 0, 0, 0);     // Oculus is special cased to not lua_call in renderHelper
+    if (err) {                        // If an error occurred
+      lua_newtable(L);                // push table on stack [ local t = {} ]
+      lua_insert(L, -2);              // move table under message
+      lua_rawseti(L, -2, 1);          // insert message in table [ t[1] = err ]
+      if (luax_push_traceback(L)) {   // if traceback succeeded
+       lua_rawseti(L, -2, 2);         // t[2] = debug.traceback()
+      }
+      renderErrorRef = luaL_ref(L, LUA_REGISTRYINDEX); // save t
+    }
+  }
+
+  lovrGraphicsSetCamera(NULL, false);
+  lovrRelease(canvas);
 }
 
 void bridgeLovrDraw(BridgeLovrDrawData *drawData) {

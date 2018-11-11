@@ -146,6 +146,7 @@ local function formatTraceback(s)
 end
 
 function lovr.errhand(message, traceback)
+  print("NOTA DEAD")
   message = 'Error:\n' .. message .. formatTraceback(traceback or debug.traceback('', 2))
   if not lovr.graphics then return function() return 1 end end
   lovr.graphics.reset()
@@ -158,6 +159,7 @@ function lovr.errhand(message, traceback)
   local function render()
     lovr.graphics.print(message, -width / 2, 0, -20, 1, 0, 0, 0, 0, .55 * pixelDensity, 'left')
   end
+  print("NOTB DEAD")
   return function()
     lovr.event.pump()
     for name in lovr.event.poll() do if name == 'quit' then return 1 end end
@@ -182,6 +184,7 @@ return function()
     end
     if not errored then
       errored = true
+      print("set errored true")
       return lovr.errhand(e, tb) or abortclean
     else
       print('Error occurred while trying to display another error:\n' .. 
@@ -201,12 +204,10 @@ return function()
     end
 
     local externerror, externtb = coroutine.yield()
-    local ok, result
     if externerror then -- A must-report error has occurred
-      ok, result = false, onerror(externerror, externtb)
-    else -- Run the per-frame function.
-      ok, result = xpcall(continuation, onerror)
-    end
+      continuation = onerror(externerror, externtb)
+    end -- Run the per-frame function.
+    local ok, result = xpcall(continuation, onerror)
     if result and ok then return result          -- Result is value returned by function. Return it.
     elseif not ok then continuation = result end -- Result is value returned by error handler. Make it the new error handler.
   end
