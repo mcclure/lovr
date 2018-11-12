@@ -60,7 +60,7 @@ bool lovrRasterizerHasGlyphs(Rasterizer* rasterizer, const char* str) {
 
 void lovrRasterizerLoadGlyph(Rasterizer* rasterizer, uint32_t character, Glyph* glyph) {
   int glyphIndex = stbtt_FindGlyphIndex(&rasterizer->font, character);
-  lovrAssert(glyphIndex, "Error loading glyph");
+  lovrAssert(glyphIndex, "Error loading glyph, codepoint 0x%x", character);
 
   // Trace glyph outline
   stbtt_vertex* vertices;
