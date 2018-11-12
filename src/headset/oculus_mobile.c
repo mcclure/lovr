@@ -391,13 +391,11 @@ static int luax_preloadmodule(lua_State* L, const char* key, lua_CFunction f) {
 static int luax_custom_atpanic(lua_State *L)
 {
     const char *msg = lua_tostring(L, -1);
-    const char *tb = "\nNo traceback";
-    if (luax_push_traceback(L)) {
-      tb = lua_tostring(L, -1);
+    // This doesn't appear to get a sensible stack. Maybe Luajit would work better?
+    if (luax_getstack_panic(L)) {
+      msg = lua_tostring(L, -1);
     }
-    lovrThrow("Lua panic: %s%s", msg, tb);
-    //__android_log_print(ANDROID_LOG_FATAL, "LOVR", "Lua panic: %s%s", msg, tb);
-    //assert(0);
+    lovrThrow("Lua panic: %s", msg);
     return 0;
 }
 

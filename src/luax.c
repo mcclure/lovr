@@ -215,6 +215,28 @@ int luax_getstack(lua_State* L) {
   return 1;
 }
 
+// Variant of luax_getstack for panic (doesn't assume free memory, skips nothing in traceback)
+int luax_getstack_panic(lua_State *L) {
+  if (!lua_checkstack (L, 3)) // Maybe this could be 2, depends on how lua_insert works
+    return 0;
+  lua_getglobal(L, "debug");
+  if (!lua_istable(L, -1)) {
+    lua_pop(L, 1);
+    return 0;
+  }
+  lua_getfield(L, -1, "traceback");
+  if (!lua_isfunction(L, -1)) {
+    lua_pop(L, 2);
+    return 0;
+  }
+  lua_remove (L, -2);     // Pop debug object
+  lua_insert(L, -2);      // Move message to top
+  lua_pushinteger(L, 0);
+  lua_call(L, 2, 1);      // Call debug.traceback
+  return 1;
+}
+
+
 void luax_pushconf(lua_State* L) {
   lua_getfield(L, LUA_REGISTRYINDEX, "_lovrconf");
 }
@@ -249,24 +271,4 @@ Color luax_checkcolor(lua_State* L, int index) {
   }
 
   return color;
-}
-
-int luax_push_traceback(lua_State *L) {
-  if (!lua_checkstack (L, 4)) // FIXME: Should be 3 instead?
-    return 0;
-  lua_getfield(L, LUA_GLOBALSINDEX, "debug"); // Fetch debug
-  if (!lua_istable(L, -1)) {
-    lua_pop(L, 1);
-    return 0;
-  }
-  lua_getfield(L, -1, "traceback");           // Fetch debug.traceback
-  if (!lua_isfunction(L, -1)) {
-    lua_pop(L, 2);
-    return 0;
-  }
-  lua_remove (L, -2);     // Pop debug object
-  lua_pushstring(L, "");  // No error message
-  lua_pushinteger(L, 0);  // FIXME: Is this correct?
-  lua_call(L, 2, 1);      // Call debug.traceback
-  return 1;
 }
