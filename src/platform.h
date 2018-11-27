@@ -17,6 +17,9 @@
 #define lovrWarnv(...) vfprintf(stderr, __VA_ARGS__)
 #endif
 
+// Include lib/sds/sds.h to actually use this type
+typedef char *sds;
+
 typedef struct {
   uint32_t width;
   uint32_t height;
@@ -86,3 +89,4 @@ bool lovrPlatformIsMouseDown(MouseButton button);
 bool lovrPlatformIsKeyDown(KeyCode key);
 void lovrSleep(double seconds);
 int lovrGetExecutablePath(char* dest, uint32_t size);
+sds lovrGetApplicationId();
