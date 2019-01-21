@@ -9,7 +9,7 @@
 	url = https://github.com/LuaDist/lua
 [submodule "deps/luajit"]
 	path = deps/luajit
-	url = https://github.com/LuaDist/luajit
+	url = https://github.com/LuaJIT/LuaJIT.git
 [submodule "deps/msdfgen"]
 	path = deps/msdfgen
 	url = https://github.com/bjornbytes/msdfgen
