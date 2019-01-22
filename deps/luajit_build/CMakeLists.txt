@@ -18,9 +18,6 @@ message("Building the tools for a LuaJIT cross compile")
 endif()
 
 message("Deletethisdebug-start\nDASM_ARCH ${DASM_ARCH}\nDASM_FLAGS ${DASM_FLAGS}\nDASM_FLAGS_SERIAL ${DASM_FLAGS_SERIAL}\nTARGET_ARCH_SERIAL ${TARGET_ARCH_SERIAL}\nTARGET_ARCH ${TARGET_ARCH}\nTARGET_LJARCH ${TARGET_LJARCH}")
-if (TARGET_ARCH_SERIAL AND NOT LJ_CROSS_INNER)
-  message(FATAL_ERROR "-DTARGET_ARCH_SERIAL should not show up except in a cross-compile tools pass")
-endif()
 
 if (WIN32)
     ADD_DEFINITIONS(-DLUA_BUILD_AS_DLL -DLUA_USE_DLOPEN)
@@ -175,8 +172,10 @@ SET(DASM_ARCH ${TARGET_LJARCH})
 SET(DASM_FLAGS)
 
 if (TARGET_ARCH_SERIAL) # The semicolons in these lists get turned into spaces by CMake string interpolation. Turn them back
-  string(REPLACE " " ";" TARGET_ARCH ${TARGET_ARCH_SERIAL})
-  string(REPLACE " " ";" DASM_FLAGS ${DASM_FLAGS_SERIAL})
+  set(TARGET_ARCH ${TARGET_ARCH_SERIAL})
+  separate_arguments(TARGET_ARCH)
+  set(DASM_FLAGS ${DASM_FLAGS_SERIAL})
+  separate_arguments(DASM_FLAGS)
   message("Deletethis-unpackedserial\nDASM_ARCH ${DASM_ARCH}\nDASM_FLAGS ${DASM_FLAGS}\nTARGET_ARCH ${TARGET_ARCH}\nTARGET_LJARCH ${TARGET_LJARCH}")
 endif()
 
@@ -298,7 +297,6 @@ ELSE(LJ_CROSS)
     TARGET_LINK_LIBRARIES(minilua m)
   endif()
 
-  message("DELETETHISDELETETHIS: COMMAND minilua ${LUAJIT_DIR}/dynasm/dynasm.lua ${DASM_FLAGS} -o ${CMAKE_CURRENT_BINARY_DIR}/buildvm_arch.h ${LUAJIT_DIR}/src/vm_${DASM_ARCH}.dasc")
   add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/buildvm_arch.h
     COMMAND minilua ${LUAJIT_DIR}/dynasm/dynasm.lua ${DASM_FLAGS} -o ${CMAKE_CURRENT_BINARY_DIR}/buildvm_arch.h ${LUAJIT_DIR}/src/vm_${DASM_ARCH}.dasc
     DEPENDS ${LUAJIT_DIR}/dynasm/dynasm.lua minilua
