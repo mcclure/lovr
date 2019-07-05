@@ -15,6 +15,8 @@ typedef struct {
 } BridgeLovrMobileData;
 BridgeLovrMobileData bridgeLovrMobileData;
 
+static vec_controller_t controllers;
+
 // Headset
 
 static void (*renderCallback)(void*);
@@ -29,8 +31,11 @@ static bool oculusMobileInit(float _offset, int msaa) {
   assert(BRIDGE_LOVR_DEVICE_UNKNOWN == HEADSET_UNKNOWN);
   assert(BRIDGE_LOVR_DEVICE_GEAR == HEADSET_GEAR);
   assert(BRIDGE_LOVR_DEVICE_GO == HEADSET_GO);
+  assert(BRIDGE_LOVR_DEVICE_QUEST == HEADSET_QUEST);
 
   offset = _offset;
+  vec_init(&controllers);
+
   return true;
 }
 
@@ -46,7 +51,7 @@ static HeadsetOrigin oculusMobileGetOriginType() {
 }
 
 static bool oculusMobileIsMounted() {
-  return true; // ???
+  return true;
 }
 
 static void oculusMobileGetDisplayDimensions(uint32_t* width, uint32_t* height) {
@@ -63,8 +68,8 @@ static void oculusMobileSetClipDistance(float clipNear, float clipFar) {
 }
 
 static void oculusMobileGetBoundsDimensions(float* width, float* depth) {
-  *width = 0;
-  *depth = 0;
+  *width = 0.f;
+  *depth = 0.f;
 }
 
 static const float* oculusMobileGetBoundsGeometry(int* count) {
@@ -76,104 +81,175 @@ static void oculusMobileGetPose(float* x, float* y, float* z, float* angle, floa
   *x = bridgeLovrMobileData.updateData.lastHeadPose.x;
   *y = bridgeLovrMobileData.updateData.lastHeadPose.y + offset; // Correct for head height
   *z = bridgeLovrMobileData.updateData.lastHeadPose.z;
-
-  // Notice: Ax and Az are both swapped and inverted. Experimentally, if you do the Oculus Go controller position
-  // lines up with Lovr visually, and if you don't it doesn't. This is probably needed because of different axis standards.
-  quat_getAngleAxis(bridgeLovrMobileData.updateData.lastHeadPose.q, angle, az, ay, ax);
-  *ax = -*ax;
-  *az = -*az;
+  quat_getAngleAxis(bridgeLovrMobileData.updateData.lastHeadPose.q, angle, ax, ay, az);
 }
 
-// TODO: This has never been tested
 static void oculusMobileGetVelocity(float* vx, float* vy, float* vz) {
   *vx = bridgeLovrMobileData.updateData.lastHeadVelocity.x;
   *vy = bridgeLovrMobileData.updateData.lastHeadVelocity.y;
   *vz = bridgeLovrMobileData.updateData.lastHeadVelocity.z;
 }
 
-// TODO: This has never been tested
 static void oculusMobileGetAngularVelocity(float* vx, float* vy, float* vz) {
   *vx = bridgeLovrMobileData.updateData.lastHeadVelocity.ax;
   *vy = bridgeLovrMobileData.updateData.lastHeadVelocity.ay;
   *vz = bridgeLovrMobileData.updateData.lastHeadVelocity.az;
 }
 
-static Controller *controller;
-
 static Controller** oculusMobileGetControllers(uint8_t* count) {
-  if (!controller)
-    controller = lovrAlloc(Controller);
-  *count = bridgeLovrMobileData.updateData.goPresent; // TODO: Figure out what multi controller Oculus Mobile looks like and support it
-  return &controller;
+  *count = controllers.length;
+  return controllers.data;
 }
 
+// TODO: Currently controllers are 1:1 matched to id and hand is assumed based on id.
+// It's unclear what this does if controllers start appearing and disappearing.
 static bool oculusMobileControllerIsConnected(Controller* controller) {
-  return bridgeLovrMobileData.updateData.goPresent;
+  return controller->id < controllers.length;
 }
 
 static ControllerHand oculusMobileControllerGetHand(Controller* controller) {
+  if (controller->id < bridgeLovrMobileData.updateData.controllerCount) {
+    BridgeLovrController *data = &bridgeLovrMobileData.updateData.controllers[controller->id];
+
+    if (data->hand & BRIDGE_LOVR_HAND_LEFT) {
+      return HAND_LEFT;
+    } else {
+      return HAND_RIGHT;
+    }
+  }
   return HAND_UNKNOWN;
 }
 
 static void oculusMobileControllerGetPose(Controller* controller, float* x, float* y, float* z, float* angle, float* ax, float* ay, float* az) {
-  *x = bridgeLovrMobileData.updateData.goPose.x;
-  *y = bridgeLovrMobileData.updateData.goPose.y + offset; // Correct for head height
-  *z = bridgeLovrMobileData.updateData.goPose.z;
+  if (controller->id < bridgeLovrMobileData.updateData.controllerCount) {
+    BridgeLovrController *data = &bridgeLovrMobileData.updateData.controllers[controller->id];
 
-  // Notice: Ax and Az are both swapped and inverted. Experimentally, if you do the Oculus Go controller position
-  // lines up with Lovr visually, and if you don't it doesn't. This is probably needed because of different axis standards.
-  quat_getAngleAxis(bridgeLovrMobileData.updateData.goPose.q, angle, az, ay, ax);
-  *ax = -*ax;
-  *az = -*az;
-}
-
-static void oculusMobileControllerGetVelocity(Controller* controller, float* vx, float* vy, float* vz) {
-  *vx = bridgeLovrMobileData.updateData.goVelocity.x;
-  *vy = bridgeLovrMobileData.updateData.goVelocity.y;
-  *vz = bridgeLovrMobileData.updateData.goVelocity.z;
-}
-
-static void oculusMobileControllerGetAngularVelocity(Controller* controller, float* vx, float* vy, float* vz) {
-  *vx = bridgeLovrMobileData.updateData.goVelocity.ax;
-  *vy = bridgeLovrMobileData.updateData.goVelocity.ay;
-  *vz = bridgeLovrMobileData.updateData.goVelocity.az;
-}
-
-static float oculusMobileControllerGetAxis(Controller* controller, ControllerAxis axis) {
-  switch (axis) {
-    case CONTROLLER_AXIS_TOUCHPAD_X:
-      return (bridgeLovrMobileData.updateData.goTrackpad.x-160)/160.0;
-    case CONTROLLER_AXIS_TOUCHPAD_Y:
-      return (bridgeLovrMobileData.updateData.goTrackpad.y-160)/160.0;
-    case CONTROLLER_AXIS_TRIGGER:
-      return bridgeLovrMobileData.updateData.goButtonDown ? 1.0 : 0.0;
-    default:
-      return 0;
+    *x = data->pose.x;
+    *y = data->pose.y + offset; // Correct for head height
+    *z = data->pose.z;
+    quat_getAngleAxis(data->pose.q, angle, ax, ay, az);
+  } else {
+    *x = *y = *z = *angle = *az = *ay = *ax = 0;
   }
 }
 
-static bool buttonCheck(BridgeLovrButton field, ControllerButton button) {
+static void oculusMobileControllerGetVelocity(Controller* controller, float* vx, float* vy, float* vz) {
+  if (controller->id < bridgeLovrMobileData.updateData.controllerCount) {
+    BridgeLovrController *data = &bridgeLovrMobileData.updateData.controllers[controller->id];
+    
+    *vx = data->velocity.x;
+    *vy = data->velocity.y;
+    *vz = data->velocity.z;
+  } else {
+    *vx = *vy = *vz = 0;
+  }
+}
+
+static void oculusMobileControllerGetAngularVelocity(Controller* controller, float* vx, float* vy, float* vz) {
+  if (controller->id < bridgeLovrMobileData.updateData.controllerCount) {
+    BridgeLovrController *data = &bridgeLovrMobileData.updateData.controllers[controller->id];
+    
+    *vx = data->velocity.ax;
+    *vy = data->velocity.ay;
+    *vz = data->velocity.az;
+  } else {
+    *vx = *vy = *vz = 0;
+  }
+}
+
+static bool buttonDown(BridgeLovrButton field, ControllerButton button) {
+  if (bridgeLovrMobileData.deviceType == BRIDGE_LOVR_DEVICE_QUEST) {
+    switch (button) {
+      case CONTROLLER_BUTTON_MENU: return field & BRIDGE_LOVR_BUTTON_MENU; // Technically "LMENU" but only fires on left controller
+      case CONTROLLER_BUTTON_TRIGGER: return field & BRIDGE_LOVR_BUTTON_SHOULDER;
+      case CONTROLLER_BUTTON_GRIP: return field & BRIDGE_LOVR_BUTTON_GRIP;
+      case CONTROLLER_BUTTON_TOUCHPAD: return field & BRIDGE_LOVR_BUTTON_JOYSTICK;
+      case CONTROLLER_BUTTON_A: return field & BRIDGE_LOVR_BUTTON_A;
+      case CONTROLLER_BUTTON_B: return field & BRIDGE_LOVR_BUTTON_B;
+      case CONTROLLER_BUTTON_X: return field & BRIDGE_LOVR_BUTTON_X;
+      case CONTROLLER_BUTTON_Y: return field & BRIDGE_LOVR_BUTTON_Y;
+      default: return false;
+    }
+  } else {
+    switch (button) {
+      case CONTROLLER_BUTTON_MENU: return field & BRIDGE_LOVR_BUTTON_GOMENU; // Technically "RMENU" but quest only has one
+      case CONTROLLER_BUTTON_TRIGGER: return field & BRIDGE_LOVR_BUTTON_GOSHOULDER;
+      case CONTROLLER_BUTTON_TOUCHPAD: return field & BRIDGE_LOVR_BUTTON_TOUCHPAD;
+      default: return false;
+    }
+  }
+}
+
+static bool buttonTouch(BridgeLovrTouch field, ControllerButton button) {
   switch (button) {
-    case CONTROLLER_BUTTON_MENU:
-      return field & BRIDGE_LOVR_BUTTON_MENU;
-    case CONTROLLER_BUTTON_TRIGGER:
-      return field & BRIDGE_LOVR_BUTTON_SHOULDER;
-    case CONTROLLER_BUTTON_TOUCHPAD:
-      return field & BRIDGE_LOVR_BUTTON_TOUCHPAD;
-    default:
-      return false;
+    case CONTROLLER_BUTTON_TRIGGER: return field & BRIDGE_LOVR_TOUCH_TRIGGER;
+    //case CONTROLLER_BUTTON_GRIP: return field & BRIDGE_LOVR_BUTTON_GRIP;
+    case CONTROLLER_BUTTON_TOUCHPAD: return field & (BRIDGE_LOVR_TOUCH_TOUCHPAD | BRIDGE_LOVR_TOUCH_JOYSTICK);
+    case CONTROLLER_BUTTON_A: return field & BRIDGE_LOVR_TOUCH_A;
+    case CONTROLLER_BUTTON_B: return field & BRIDGE_LOVR_TOUCH_B;
+    case CONTROLLER_BUTTON_X: return field & BRIDGE_LOVR_TOUCH_X;
+    case CONTROLLER_BUTTON_Y: return field & BRIDGE_LOVR_TOUCH_Y;
+    default: return false;
+  }
+}
+
+
+static float oculusMobileControllerGetAxis(Controller* controller, ControllerAxis axis) {
+  if (controller->id < bridgeLovrMobileData.updateData.controllerCount) {
+    BridgeLovrController *data = &bridgeLovrMobileData.updateData.controllers[controller->id];
+    
+    if (bridgeLovrMobileData.deviceType == BRIDGE_LOVR_DEVICE_QUEST) {
+      switch (axis) {
+        case CONTROLLER_AXIS_TOUCHPAD_X:
+          return data->trackpad.x;
+        case CONTROLLER_AXIS_TOUCHPAD_Y:
+          return data->trackpad.y;
+        case CONTROLLER_AXIS_TRIGGER:
+          return data->trigger;
+        case CONTROLLER_AXIS_GRIP:
+          return data->grip;
+        default:
+          return 0;
+      }
+    } else {
+      switch (axis) {
+        case CONTROLLER_AXIS_TOUCHPAD_X:
+          return (data->trackpad.x - 160) / 160.f;
+        case CONTROLLER_AXIS_TOUCHPAD_Y:
+          return (data->trackpad.y- 160 ) / 160.f;
+        case CONTROLLER_AXIS_TRIGGER:
+          return buttonDown(data->buttonDown, CONTROLLER_BUTTON_TRIGGER) ? 1.f : 0.f;
+        default:
+          return 0;
+      }
+    }
+  } else {
+    return 0;
   }
 }
 
 static bool oculusMobileControllerIsDown(Controller* controller, ControllerButton button) {
-  return buttonCheck(bridgeLovrMobileData.updateData.goButtonDown, button);
+  if (controller->id < bridgeLovrMobileData.updateData.controllerCount) {
+    BridgeLovrController *data = &bridgeLovrMobileData.updateData.controllers[controller->id];
+    
+    return buttonDown(data->buttonDown, button);
+  } else {
+    return false;
+  }
 }
 
 static bool oculusMobileControllerIsTouched(Controller* controller, ControllerButton button) {
-  return buttonCheck(bridgeLovrMobileData.updateData.goButtonTouch, button);
+  if (controller->id < bridgeLovrMobileData.updateData.controllerCount) {
+    BridgeLovrController *data = &bridgeLovrMobileData.updateData.controllers[controller->id];
+    
+    return buttonTouch(data->buttonTouch, button);
+  } else {
+    return false;
+  }
 }
 
 static void oculusMobileControllerVibrate(Controller* controller, float duration, float power) {
+  //
 }
 
 static ModelData* oculusMobileControllerNewModelData(Controller* controller) {
@@ -184,9 +260,6 @@ static ModelData* oculusMobileControllerNewModelData(Controller* controller) {
 static void oculusMobileRenderTo(void (*callback)(void*), void* userdata) {
   renderCallback = callback;
   renderUserdata = userdata;
-}
-
-static void oculusMobileUpdate(float dt) {
 }
 
 HeadsetInterface lovrHeadsetOculusMobileDriver = {
@@ -216,8 +289,8 @@ HeadsetInterface lovrHeadsetOculusMobileDriver = {
   oculusMobileControllerVibrate,
   oculusMobileControllerNewModelData,
   oculusMobileRenderTo,
-  NULL, // No mirror texture
-  oculusMobileUpdate
+  .getMirrorTexture = NULL,
+  .update = NULL
 };
 
 // Oculus-specific platform functions
@@ -233,8 +306,10 @@ double lovrPlatformGetTime(void) {
 }
 
 void lovrPlatformGetFramebufferSize(int* width, int* height) {
-  *width = bridgeLovrMobileData.displayDimensions.width;
-  *height = bridgeLovrMobileData.displayDimensions.height;
+  if (width)
+    *width = bridgeLovrMobileData.displayDimensions.width;
+  if (height)
+    *height = bridgeLovrMobileData.displayDimensions.height;
 }
 
 bool lovrPlatformHasWindow() {
@@ -262,7 +337,7 @@ bool lovrPlatformHasWindow() {
 extern unsigned char boot_lua[];
 extern unsigned int boot_lua_len;
 
-static lua_State *L, *Lcoroutine;
+static lua_State *L, *T;
 static int coroutineRef = LUA_NOREF;
 static int coroutineStartFunctionRef = LUA_NOREF;
 
@@ -307,7 +382,7 @@ static void bridgeLovrInitState() {
   // Copypaste the init sequence from lovrRun:
   // Load libraries
   L = luaL_newstate(); // FIXME: Can this be handed off to main.c?
-  luax_setmainstate(L);
+  luax_setmainthread(L);
   lua_atpanic(L, luax_custom_atpanic);
   luaL_openlibs(L);
   lovrLog("\n OPENED LIB\n");
@@ -358,11 +433,27 @@ static void bridgeLovrInitState() {
   }
 
   coroutineStartFunctionRef = luaL_ref(L, LUA_REGISTRYINDEX); // Value returned by boot.lua
-  Lcoroutine = lua_newthread(L); // Leave L clear to be used by the draw function
-  lua_atpanic(Lcoroutine, luax_custom_atpanic);
+  T = lua_newthread(L); // Leave L clear to be used by the draw function
+  lua_atpanic(T, luax_custom_atpanic);
   coroutineRef = luaL_ref(L, LUA_REGISTRYINDEX); // Hold on to the Lua-side coroutine object so it isn't GC'd
 
   lovrLog("\n STATE INIT COMPLETE\n");
+}
+
+void bridgeManageControllers(BridgeLovrUpdateData *updateData) {
+  if (updateData->controllerCount != controllers.length) {
+    Controller *controller; int idx;
+    vec_foreach(&controllers, controller, idx) {
+      lovrRelease(controller);
+    }
+    vec_clear(&controllers);
+
+    for (idx = 0; idx < updateData->controllerCount; idx++) {
+      controller = lovrAlloc(Controller);
+      controller->id = idx;
+      vec_push(&controllers, controller);
+    }
+  }
 }
 
 void bridgeLovrInit(BridgeLovrInitData *initData) {
@@ -390,6 +481,9 @@ void bridgeLovrInit(BridgeLovrInitData *initData) {
 void bridgeLovrUpdate(BridgeLovrUpdateData *updateData) {
   // Unpack update data
   bridgeLovrMobileData.updateData = *updateData;
+  bridgeManageControllers(updateData);
+
+//  for(int c = 0; c < updateData->controllerCount; c++) lovrLog("%d: d %x t %x\n", c, (uint32_t)updateData->controllers[c].buttonDown, (uint32_t)updateData->controllers[c].buttonTouch);
 
   if (pauseState == PAUSESTATE_BUG) { // Bad frame-- replace bad time with last known good oculus time
     bridgeLovrMobileData.updateData.displayTime = lastPauseAtRaw;
@@ -401,15 +495,16 @@ void bridgeLovrUpdate(BridgeLovrUpdateData *updateData) {
 
   // Go
   if (coroutineStartFunctionRef != LUA_NOREF) {
-    lua_rawgeti(Lcoroutine, LUA_REGISTRYINDEX, coroutineStartFunctionRef);
-    luaL_unref (Lcoroutine, LUA_REGISTRYINDEX, coroutineStartFunctionRef);
+    lua_rawgeti(T, LUA_REGISTRYINDEX, coroutineStartFunctionRef);
+    luaL_unref (T, LUA_REGISTRYINDEX, coroutineStartFunctionRef);
     coroutineStartFunctionRef = LUA_NOREF; // No longer needed
   }
-  int coroutineArgs = luax_pushLovrHeadsetRenderError(Lcoroutine);
-  if (lua_resume(Lcoroutine, coroutineArgs) != LUA_YIELD) {
-    if (lua_type(Lcoroutine, -1) == LUA_TSTRING && !strcmp(lua_tostring(Lcoroutine, -1), "restart")) {
+
+  luax_geterror(T);
+  luax_clearerror(T);
+  if (lua_resume(T, 1) != LUA_YIELD) {
+    if (lua_type(T, -1) == LUA_TSTRING && !strcmp(lua_tostring(T, -1), "restart")) {
       lua_close(L);
-      luax_setmainstate(NULL);
       bridgeLovrInitState();
     } else {
       lovrLog("\n LUA REQUESTED A QUIT\n");
@@ -418,30 +513,41 @@ void bridgeLovrUpdate(BridgeLovrUpdateData *updateData) {
   }
 }
 
-static void lovrOculusMobileDraw(int framebuffer, int width, int height, float *eyeViewMatrix, float *projectionMatrix) {
+static void lovrOculusMobileDraw(int framebuffer, bool multiview, int width, int height, float *eyeViewMatrix, float *projectionMatrix) {
   lovrGpuDirtyTexture();
 
-  CanvasFlags flags = {0};
-  Canvas *canvas = lovrCanvasCreateFromHandle(width, height, flags, framebuffer, 0, 0, 1, true);
+  Canvas canvas = { 0 };
+  CanvasFlags flags = { .multiview = multiview };
+  lovrCanvasInitFromHandle(&canvas, width, height, flags, framebuffer, 0, 0, 1, true);
 
-  Camera camera = { .canvas = canvas, .stereo = false };
-  memcpy(camera.viewMatrix[0], eyeViewMatrix, sizeof(camera.viewMatrix[0]));
-  mat4_translate(camera.viewMatrix[0], 0, -offset, 0);
+  Camera camera = { .canvas = &canvas, .stereo = false };
 
-  memcpy(camera.projection[0], projectionMatrix, sizeof(camera.projection[0]));
+  if (multiview) {
+    mat4_init(camera.viewMatrix[0], bridgeLovrMobileData.updateData.eyeViewMatrix[0]);
+    mat4_init(camera.viewMatrix[1], bridgeLovrMobileData.updateData.eyeViewMatrix[1]);
+    mat4_init(camera.projection[0], bridgeLovrMobileData.updateData.projectionMatrix[0]);
+    mat4_init(camera.projection[1], bridgeLovrMobileData.updateData.projectionMatrix[1]);
+    mat4_translate(camera.viewMatrix[0], 0, -offset, 0);
+    mat4_translate(camera.viewMatrix[1], 0, -offset, 0);
+  } else {
+    mat4_init(camera.viewMatrix[0], eyeViewMatrix);
+    mat4_init(camera.projection[0], projectionMatrix);
+    mat4_translate(camera.viewMatrix[0], 0, -offset, 0);
+  }
 
   lovrGraphicsSetCamera(&camera, true);
 
-  if (renderCallback)
+  if (renderCallback) {
     renderCallback(renderUserdata);
+  }
 
   lovrGraphicsSetCamera(NULL, false);
-  lovrRelease(canvas);
+  lovrCanvasDestroy(&canvas);
 }
 
 void bridgeLovrDraw(BridgeLovrDrawData *drawData) {
   int eye = drawData->eye;
-  lovrOculusMobileDraw(drawData->framebuffer, bridgeLovrMobileData.displayDimensions.width, bridgeLovrMobileData.displayDimensions.height,
+  lovrOculusMobileDraw(drawData->framebuffer, drawData->multiview, bridgeLovrMobileData.displayDimensions.width, bridgeLovrMobileData.displayDimensions.height,
     bridgeLovrMobileData.updateData.eyeViewMatrix[eye], bridgeLovrMobileData.updateData.projectionMatrix[eye]); // Is this indexing safe?
 }
 
