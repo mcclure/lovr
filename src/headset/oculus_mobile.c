@@ -517,7 +517,7 @@ static void lovrOculusMobileDraw(int framebuffer, bool multiview, int width, int
   lovrGpuDirtyTexture();
 
   Canvas canvas = { 0 };
-  CanvasFlags flags = { .multiview = multiview };
+  CanvasFlags flags = {};
   lovrCanvasInitFromHandle(&canvas, width, height, flags, framebuffer, 0, 0, 1, true);
 
   Camera camera = { .canvas = &canvas, .stereo = false };
@@ -547,7 +547,7 @@ static void lovrOculusMobileDraw(int framebuffer, bool multiview, int width, int
 
 void bridgeLovrDraw(BridgeLovrDrawData *drawData) {
   int eye = drawData->eye;
-  lovrOculusMobileDraw(drawData->framebuffer, drawData->multiview, bridgeLovrMobileData.displayDimensions.width, bridgeLovrMobileData.displayDimensions.height,
+  lovrOculusMobileDraw(drawData->framebuffer, false && drawData->multiview, bridgeLovrMobileData.displayDimensions.width, bridgeLovrMobileData.displayDimensions.height,
     bridgeLovrMobileData.updateData.eyeViewMatrix[eye], bridgeLovrMobileData.updateData.projectionMatrix[eye]); // Is this indexing safe?
 }
 

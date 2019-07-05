@@ -63,6 +63,7 @@ const char* HeadsetTypes[] = {
   [HEADSET_RIFT] = "rift",
   [HEADSET_GEAR] = "gear",
   [HEADSET_GO] = "go",
+  [HEADSET_QUEST] = "quest",
   [HEADSET_WINDOWS_MR] = "windowsmr",
   NULL
 };
