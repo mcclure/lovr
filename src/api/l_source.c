@@ -63,6 +63,22 @@ static int l_lovrSourceGetDuration(lua_State* L) {
   return 1;
 }
 
+static int l_lovrSourceGetPosition(lua_State* L) {
+  float position[4];
+  lovrSourceGetPosition(luax_checktype(L, 1, Source), position);
+  lua_pushnumber(L, position[0]);
+  lua_pushnumber(L, position[1]);
+  lua_pushnumber(L, position[2]);
+  return 3;
+}
+
+static int l_lovrSourceRewind(lua_State* L) {
+  Source* source = luax_checktype(L, 1, Source);
+  Decoder* decoder = lovrSourceGetDecoder(source);
+  lovrDecoderSeek(decoder, 0);
+  return 0;
+}
+
 static int l_lovrSourceSeek(lua_State* L) {
   Source* source = luax_checktype(L, 1, Source);
   TimeUnit unit = luaL_checkoption(L, 3, "seconds", TimeUnits);
@@ -74,6 +90,14 @@ static int l_lovrSourceSeek(lua_State* L) {
     lovrDecoderSeek(decoder, luaL_checkinteger(L, 2));
   }
 
+  return 0;
+}
+
+static int l_lovrSourceSetPosition(lua_State* L) {
+  Source* source = luax_checktype(L, 1, Source);
+  float position[4];
+  luax_readvec3(L, 2, position, NULL);
+  lovrSourceSetPosition(source, position);
   return 0;
 }
 
@@ -93,6 +117,7 @@ static int l_lovrSourceTell(lua_State* L) {
 }
 
 const luaL_Reg lovrSource[] = {
+  { "getPosition", l_lovrSourceGetPosition },
   { "play", l_lovrSourcePlay },
   { "pause", l_lovrSourcePause },
   { "stop", l_lovrSourceStop },
@@ -102,7 +127,9 @@ const luaL_Reg lovrSource[] = {
   { "getVolume", l_lovrSourceGetVolume },
   { "setVolume", l_lovrSourceSetVolume },
   { "getDuration", l_lovrSourceGetDuration },
+  { "rewind", l_lovrSourceRewind },
   { "seek", l_lovrSourceSeek },
+  { "setPosition", l_lovrSourceSetPosition },
   { "tell", l_lovrSourceTell },
   { NULL, NULL }
 };

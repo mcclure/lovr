@@ -15,6 +15,10 @@ typedef struct Source {
   struct Source* next;
   struct Decoder* decoder;
   float volume;
+  float position[4];
+#ifdef LOVR_ENABLE_OCULUS_AUDIO
+  unsigned spatializerId: 4; // Only meaningful while playing
+#endif
   bool playing : 1;
   bool looping : 1;
   bool tracked : 1;
