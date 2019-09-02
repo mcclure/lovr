@@ -176,6 +176,10 @@ static void handler(ma_device* device, void* output, const void* input, uint32_t
 #endif
   }
 
+#ifndef LOVR_ENABLE_OCULUS_AUDIO
+  lovrAudioUpmix(output, accumulate, frames, 2);
+#endif
+
   ma_mutex_unlock(&state.lock);
 }
 
@@ -247,7 +251,7 @@ void lovrSourceDestroy(void* ref) {
 void lovrSourcePlay(Source* source) {
   ma_mutex_lock(&state.lock);
 
-  if (source->playing) {
+  if (!source->playing) {
 
     source->playing = true;
 
