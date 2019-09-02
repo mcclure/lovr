@@ -18,6 +18,8 @@ typedef struct Source {
   float position[4];
 #ifdef LOVR_ENABLE_OCULUS_AUDIO
   unsigned spatializerId: 4; // Only meaningful while playing
+#else
+  float residue; // Used to prevent pops if the sound ends suddenly
 #endif
   bool playing : 1;
   bool looping : 1;

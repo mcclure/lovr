@@ -9,6 +9,13 @@
 #include <string.h>
 #include <stdlib.h>
 
+#ifdef LOVR_DEBUG_AUDIOTAP
+// To get a record of what the audio callback is playing, define LOVR_DEBUG_AUDIOTAP,
+// after running look in the lovr save directory for lovrDebugAudio.raw, and open as raw 32-bit floats
+// Audacity (or Amadeus, on mac) can do this
+#include "modules/filesystem/file.h"
+#endif
+
 typedef arr_t(float) float_arr_t;
 
 static struct {
@@ -20,6 +27,11 @@ static struct {
   float_arr_t decodeBuffer;
 #ifndef LOVR_ENABLE_OCULUS_AUDIO
   float_arr_t accumulateBuffer;
+  float residue;
+#endif
+#ifdef LOVR_DEBUG_AUDIOTAP
+  File audiotapFile;
+  bool audiotapWriting;
 #endif
 } state;
 
@@ -49,6 +61,28 @@ static void lovrAudioUpmix(float *output, float *input, int frames, int channels
 
 static void lovrAudioZero(float *output, int frames, int channels) {
   memset(output, 0, frames*channels*sizeof(float));
+}
+
+// Mix into a *mono* stream an inaudible repair for a sample residue (popping noise at the end of a sample).
+// Falloff should be a single float sample. The value afterward will be what still remains.
+// FIXME: This is a linear falloff. Something like a x*x*(3 - 2*x) falloff would reduce the chance of audible harmonics.
+static const float linearFalloff = 1.f/2205.f; // At 44100hz this will produce a 10hz sawtooth wave shape
+static void lovrAudioFalloffMix(float *output, float *residue, int frames) {
+  int f = 0;
+  if (isnan(*residue)) { *residue = 0.f; return; }
+  float sign = *residue < 0 ? -1.f : 1.f;
+  *residue = fabs(*residue);
+  if (*residue > 1) *residue = 1;       // Assume miniaudio clamps to -1..1
+  while (*residue > 0 && f < frames) {
+    *residue -= linearFalloff;
+    if (*residue <= 0) {
+      *residue = 0;
+      break;
+    }
+    output[f] += *residue * sign;
+    f++;
+  }
+  if (*residue > 0) *residue *= sign;
 }
 
 #ifdef LOVR_ENABLE_OCULUS_AUDIO
@@ -124,6 +158,7 @@ static void handler(ma_device* device, void* output, const void* input, uint32_t
 #else
   float *accumulate = getReservedBuffer(&state.accumulateBuffer, frames, 1);
   lovrAudioZero(accumulate, frames, 1);
+  lovrAudioFalloffMix(accumulate, &state.residue, frames);
 #endif
 
   uint32_t n = 0; // How much data has been written into mono buffer?
@@ -133,6 +168,7 @@ static void handler(ma_device* device, void* output, const void* input, uint32_t
     int decodeLen, decodeGoal;
 #ifdef LOVR_ENABLE_OCULUS_AUDIO
     int spatializerId = source->spatializerId;
+    float residue = 0;
 #endif
 
     if (source->playing) {
@@ -140,6 +176,8 @@ static void handler(ma_device* device, void* output, const void* input, uint32_t
         decodeGoal = frames - decodeOffset; // How many bytes would be needed to fill the buffer
         decodeLen = lovrDecoderDecode(source->decoder, decodeGoal, 1, (uint8_t*)(decode + decodeOffset));
         decodeOffset += decodeLen;
+        if (decodeOffset == frames)
+          source->residue = decode[frames-1];
 
         if (decodeLen < decodeGoal) { // The buffer is not full
           if (source->looping) {      // Looping sound; repeat decode until full
@@ -173,11 +211,21 @@ static void handler(ma_device* device, void* output, const void* input, uint32_t
     lovrAudioMix(output, unpack, frames, 2);
 #else
     lovrAudioMix(accumulate, decode, decodeOffset, 1);
+    if (decodeOffset < frames) {
+      float residue = decodeOffset > 0 ? decode[decodeOffset-1] : source->residue;
+      lovrAudioFalloffMix(accumulate + decodeOffset, &residue, frames - decodeOffset);
+      state.residue += residue;
+    }
 #endif
   }
 
 #ifndef LOVR_ENABLE_OCULUS_AUDIO
   lovrAudioUpmix(output, accumulate, frames, 2);
+#endif
+
+#ifdef LOVR_DEBUG_AUDIOTAP
+  if (state.audiotapWriting)
+    lovrFileWrite(&state.audiotapFile, output, 2*FRAME_SIZE(frames));
 #endif
 
   ma_mutex_unlock(&state.lock);
@@ -210,6 +258,11 @@ bool lovrAudioInit() {
     return false;
   }
 
+#ifdef LOVR_DEBUG_AUDIOTAP
+  lovrFileInit(&state.audiotapFile, "lovrDebugAudio.raw");
+  state.audiotapWriting = lovrFileOpen(&state.audiotapFile, OPEN_WRITE);
+#endif
+
   return state.initialized = true;
 }
 
@@ -217,6 +270,12 @@ void lovrAudioDestroy() {
   if (!state.initialized) return;
   ma_device_uninit(&state.device);
   ma_mutex_uninit(&state.lock);
+#ifdef LOVR_DEBUG_AUDIOTAP
+  if (state.audiotapWriting) {
+    lovrFileClose(&state.audiotapFile);
+    state.audiotapWriting = false;
+  }
+#endif
   while (state.sources) {
     Source* source = state.sources;
     state.sources = source->next;
@@ -296,6 +355,8 @@ void lovrSourcePlay(Source* source) {
 
     if (oastate.bufferSize) // If context initialized
       ovrAudio_ResetAudioSource(oastate.context, spatializerId);
+#else
+    source->residue = 0;
 #endif
   }
 
