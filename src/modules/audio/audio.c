@@ -92,9 +92,9 @@ static void lovrAudioFalloffMix(float *output, float *residue, int frames) {
 #include "OVR_Audio.h"
 #include "headset/oculus_mobile.h"
 
-#define LOVR_SOURCE_MAX 16 // If this increases, change spatializerId size in Source
+#define LOVR_SOURCE_MAX 4 // If this increases, change spatializerId size in Source
 
-const static uint32_t lovrOvrFlags = ovrAudioSourceFlag_DirectTimeOfArrival;
+const static uint32_t lovrOvrFlags = 0; //ovrAudioSourceFlag_DirectTimeOfArrival;
 
 static struct {
   uint32_t sampleRate;
@@ -118,14 +118,16 @@ static bool lovrSpatializerRealInit(uint32_t bufferSize) {
   ovrAudioContextConfiguration config = {};
 
   config.acc_Size = sizeof( config );
+  config.acc_MaxNumSources = LOVR_SOURCE_MAX;
   config.acc_SampleRate = oastate.sampleRate;
   config.acc_BufferLength = bufferSize;
-  config.acc_MaxNumSources = LOVR_SOURCE_MAX;
 
   if ( ovrAudio_CreateContext( &oastate.context, &config ) != ovrSuccess )
   {
     return true;
   }
+
+  oastate.bufferSize = bufferSize;
 
   return false;
 }
@@ -156,12 +158,14 @@ static void handler(ma_device* device, void* output, const void* input, uint32_t
   for(int idx = 0; idx < LOVR_SOURCE_MAX; idx++) {
     Source *source = oastate.sources[idx].source;
     if (source) {
-      ovrAudio_SetAudioSourcePos(oastate.context, idx, source->position[0], source->position[1], source->position[2]);
+      lovrAudio_SetAudioSourcePos(oastate.context, idx, source->position[0], source->position[1], source->position[2]);
     } else if (oastate.sources[idx].occupied) {
       uint32_t outStatus = lovrOvrFlags;
       ovrAudio_SpatializeMonoSourceInterleaved(oastate.context, idx, &outStatus, unpack, NULL);
-      if (outStatus & ovrAudioSpatializationStatus_Finished)
+      if (outStatus & ovrAudioSpatializationStatus_Finished) {
         oastate.sources[idx].occupied = false;
+        oastate.occupiedCount--;
+      }
       lovrAudioMix(output, unpack, frames, 2);
     }
   }
@@ -218,8 +222,10 @@ static void handler(ma_device* device, void* output, const void* input, uint32_t
 
     uint32_t outStatus = lovrOvrFlags;
     ovrAudio_SpatializeMonoSourceInterleaved(oastate.context, spatializerId, &outStatus, unpack, decode);
-    if (!oastate.sources[spatializerId].source && (outStatus & ovrAudioSpatializationStatus_Finished))
+    if (!oastate.sources[spatializerId].source && (outStatus & ovrAudioSpatializationStatus_Finished)) {
       oastate.sources[spatializerId].occupied = false;
+      oastate.occupiedCount--;
+    }
     lovrAudioMix(output, unpack, frames, 2);
 #else
     lovrAudioMix(accumulate, decode, decodeOffset, 1);
@@ -341,7 +347,7 @@ void lovrSourcePlay(Source* source) {
     // has negative effects. It is possible that removing the Reset() below
     // would make it perfectly safe for a sound to overlap with an echo tail.
     int spatializerId;
-    if (oastate.occupiedCount < LOVR_SOURCE_MAX) {
+    if (oastate.occupiedCount < LOVR_SOURCE_MAX) { // There's a free space to claim
       for (spatializerId = 0; spatializerId < LOVR_SOURCE_MAX; spatializerId++)
         if (!oastate.sources[spatializerId].occupied)
           break;
@@ -361,6 +367,8 @@ void lovrSourcePlay(Source* source) {
       oastate.sourceCount--;
     }
     source->spatializerId = spatializerId;
+    oastate.sources[spatializerId].source = source;
+    oastate.sources[spatializerId].occupied = true;
     oastate.sourceCount++;
     oastate.occupiedCount++;
 
