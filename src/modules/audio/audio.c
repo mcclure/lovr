@@ -158,7 +158,7 @@ static void handler(ma_device* device, void* output, const void* input, uint32_t
   for(int idx = 0; idx < LOVR_SOURCE_MAX; idx++) {
     Source *source = oastate.sources[idx].source;
     if (source) {
-      lovrAudio_SetAudioSourcePos(oastate.context, idx, source->position[0], source->position[1], source->position[2]);
+      ovrAudio_SetAudioSourcePos(oastate.context, idx, source->position[0], source->position[1], source->position[2]);
     } else if (oastate.sources[idx].occupied) {
       uint32_t outStatus = lovrOvrFlags;
       ovrAudio_SpatializeMonoSourceInterleaved(oastate.context, idx, &outStatus, unpack, NULL);
