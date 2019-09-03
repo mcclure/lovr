@@ -364,19 +364,19 @@ void lovrSourcePlay(Source* source) {
 }
 
 void lovrSourcePause(Source* source) {
-#ifdef LOVR_ENABLE_OCULUS_AUDIO
   ma_mutex_lock(&state.lock);
 
+#ifdef LOVR_ENABLE_OCULUS_AUDIO
   if (source->playing) { // Notice: still occupied
     oastate.sources[source->spatializerId].source = NULL;
     oastate.sourceCount--;
     source->playing = false;
   }
-
-  ma_mutex_unlock(&state.lock);
 #else
   source->playing = false;
 #endif
+
+  ma_mutex_unlock(&state.lock);
 }
 
 bool lovrSourceIsPlaying(Source* source) {
@@ -413,4 +413,12 @@ void lovrSourceSetVolume(Source* source, float volume) {
 
 Decoder* lovrSourceGetDecoder(Source* source) {
   return source->decoder;
+}
+
+void lovrAudioLock() {
+  ma_mutex_lock(&state.lock);
+}
+
+void lovrAudioUnlock() {
+  ma_mutex_unlock(&state.lock);
 }

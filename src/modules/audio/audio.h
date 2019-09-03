@@ -29,6 +29,9 @@ typedef struct Source {
 bool lovrAudioInit(void);
 void lovrAudioDestroy(void);
 
+void lovrAudioLock(void);
+void lovrAudioUnlock(void);
+
 Source* lovrSourceInit(Source* source, struct Decoder* decoder);
 #define lovrSourceCreate(...) lovrSourceInit(lovrAlloc(Source), __VA_ARGS__)
 void lovrSourceDestroy(void* ref);
