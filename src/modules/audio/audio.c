@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define LOVR_DEBUG_AUDIOTAP
 #ifdef LOVR_DEBUG_AUDIOTAP
 // To get a record of what the audio callback is playing, define LOVR_DEBUG_AUDIOTAP,
 // after running look in the lovr save directory for lovrDebugAudio.raw, and open as raw 32-bit floats
@@ -86,15 +87,20 @@ static void lovrAudioFalloffMix(float *output, float *residue, int frames) {
 }
 
 #ifdef LOVR_ENABLE_OCULUS_AUDIO
+
+#include "headset/oculus_math_shim.h"
 #include "OVR_Audio.h"
+#include "headset/oculus_mobile.h"
 
 #define LOVR_SOURCE_MAX 16 // If this increases, change spatializerId size in Source
+
+const static uint32_t lovrOvrFlags = ovrAudioSourceFlag_DirectTimeOfArrival;
 
 static struct {
   uint32_t sampleRate;
   uint32_t bufferSize;
-  static OVRAudioContext context;
-  static struct {
+  ovrAudioContext context;
+  struct {
     Source *source;
     bool occupied; // If true either source->playing or tailoff
   } sources[LOVR_SOURCE_MAX];
@@ -103,22 +109,20 @@ static struct {
   float_arr_t unpackBuffer;
 } oastate;
 
-static void lovrSpatializerInit(float sampleRate) {
+static bool lovrSpatializerInit(float sampleRate) {
   oastate.sampleRate = sampleRate;
+  return false;
 }
 
-static void lovrSpatializerRealInit(uint32_t bufferSize) {
+static bool lovrSpatializerRealInit(uint32_t bufferSize) {
   ovrAudioContextConfiguration config = {};
 
   config.acc_Size = sizeof( config );
-  config.acc_Provider = ovrAudioSpatializationProvider_OVR_OculusHQ;
-  config.acc_SampleRate = sampleRate;
-  config.acc_BufferLength = bufferSource;
+  config.acc_SampleRate = oastate.sampleRate;
+  config.acc_BufferLength = bufferSize;
   config.acc_MaxNumSources = LOVR_SOURCE_MAX;
 
-  ovrAudioContext context;
-
-  if ( ovrAudio_CreateContext( &context, &config ) != ovrSuccess )
+  if ( ovrAudio_CreateContext( &oastate.context, &config ) != ovrSuccess )
   {
     return true;
   }
@@ -137,19 +141,25 @@ static void handler(ma_device* device, void* output, const void* input, uint32_t
   float *decode = getReservedBuffer(&state.decodeBuffer, frames, 1);
 
 #ifdef LOVR_ENABLE_OCULUS_AUDIO
-  if (!oastate.bufferLength)
+  if (!oastate.bufferSize)
     lovrSpatializerRealInit(frames);
 
   float *unpack = getReservedBuffer(&oastate.unpackBuffer, frames, 2);
   lovrAudioZero(output, frames, 2); // This path assumes output is stereo since that's what we request below.
+
+  {
+    ovrPoseStatef pose;
+    lovrOculusMobileRecreatePose(&pose);
+    ovrAudio_SetListenerPoseStatef(oastate.context, &pose);
+  }
 
   for(int idx = 0; idx < LOVR_SOURCE_MAX; idx++) {
     Source *source = oastate.sources[idx].source;
     if (source) {
       ovrAudio_SetAudioSourcePos(oastate.context, idx, source->position[0], source->position[1], source->position[2]);
     } else if (oastate.sources[idx].occupied) {
-      uint32_t outStatus = 0;
-      ovrAudio_SpatializeMonoSourceInterleaved(&oastate.context, spatializerId, &outStatus, unpack, NULL);
+      uint32_t outStatus = lovrOvrFlags;
+      ovrAudio_SpatializeMonoSourceInterleaved(oastate.context, idx, &outStatus, unpack, NULL);
       if (outStatus & ovrAudioSpatializationStatus_Finished)
         oastate.sources[idx].occupied = false;
       lovrAudioMix(output, unpack, frames, 2);
@@ -176,8 +186,10 @@ static void handler(ma_device* device, void* output, const void* input, uint32_t
         decodeGoal = frames - decodeOffset; // How many bytes would be needed to fill the buffer
         decodeLen = lovrDecoderDecode(source->decoder, decodeGoal, 1, (uint8_t*)(decode + decodeOffset));
         decodeOffset += decodeLen;
+#ifndef LOVR_ENABLE_OCULUS_AUDIO
         if (decodeOffset == frames)
           source->residue = decode[frames-1];
+#endif
 
         if (decodeLen < decodeGoal) { // The buffer is not full
           if (source->looping) {      // Looping sound; repeat decode until full
@@ -204,8 +216,8 @@ static void handler(ma_device* device, void* output, const void* input, uint32_t
     if (decodeOffset < frames)
       lovrAudioZero(decode + decodeOffset, frames - decodeOffset, 1);
 
-    uint32_t outStatus = 0;
-    ovrAudio_SpatializeMonoSourceInterleaved(&oastate.context, spatializerId, &outStatus, unpack, decode);
+    uint32_t outStatus = lovrOvrFlags;
+    ovrAudio_SpatializeMonoSourceInterleaved(oastate.context, spatializerId, &outStatus, unpack, decode);
     if (!oastate.sources[spatializerId].source && (outStatus & ovrAudioSpatializationStatus_Finished))
       oastate.sources[spatializerId].occupied = false;
     lovrAudioMix(output, unpack, frames, 2);
@@ -287,8 +299,7 @@ void lovrAudioDestroy() {
 
 #if LOVR_ENABLE_OCULUS_AUDIO
   if (oastate.bufferSize) {
-    ovrAudio_DestroyContext( &oastate.context );
-    ovrAudio_Shutdown(); // FIXME: Is it safe to Shutdown() and then later start back up?
+    ovrAudio_DestroyContext( oastate.context );
     oastate.bufferSize = 0;
   }
 #endif
@@ -330,22 +341,22 @@ void lovrSourcePlay(Source* source) {
     // has negative effects. It is possible that removing the Reset() below
     // would make it perfectly safe for a sound to overlap with an echo tail.
     int spatializerId;
-    if (occupiedCount < LOVR_SOURCE_MAX) {
+    if (oastate.occupiedCount < LOVR_SOURCE_MAX) {
       for (spatializerId = 0; spatializerId < LOVR_SOURCE_MAX; spatializerId++)
         if (!oastate.sources[spatializerId].occupied)
           break;
-    } else if (sourceCount < LOVR_SOURCE_MAX) { // Must kill tail
+    } else if (oastate.sourceCount < LOVR_SOURCE_MAX) { // Must kill tail
       for (spatializerId = LOVR_SOURCE_MAX-1; spatializerId > 0; spatializerId--)
         if (!oastate.sources[spatializerId].source)
           break;
       oastate.occupiedCount--;
     } else { // Must kill sound
       Source *target;
-      for(s = state.sources; s->next; s++)
+      for(Source *s = state.sources; s->next; s++) // Pick final playing Source in list
         if (s->playing)
           target = s;
-      s->playing = false;
-      spatializerId = s->spatializerId;
+      target->playing = false;
+      spatializerId = target->spatializerId;
       oastate.occupiedCount--;
       oastate.sourceCount--;
     }

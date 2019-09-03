@@ -22,6 +22,7 @@ option(LOVR_USE_OPENVR "Enable the OpenVR backend for the headset module" ON)
 option(LOVR_USE_WEBVR "Enable the WebVR backend for the headset module" OFF)
 option(LOVR_USE_OCULUS "Enable the LibOVR backend for the headset module (be sure to also set LOVR_OCULUS_PATH to point to the Oculus SDK)" OFF)
 option(LOVR_USE_OCULUS_MOBILE "Enable the Oculus Mobile (Android) backend for the headset module" OFF)
+option(LOVR_USE_OCULUS_AUDIO "Enable the Oculus Audio spatializer" OFF)
 option(LOVR_USE_DESKTOP_HEADSET "Enable the keyboard/mouse backend for the headset module" ON)
 option(LOVR_USE_LEAP "Enable the Leap Motion backend for the headset module" OFF)
 option(LOVR_USE_SSE "Enable SIMD use of intrinsics" ON)
@@ -345,7 +346,6 @@ target_link_libraries(lovr
   ${LOVR_OPENGL}
   ${LOVR_OPENVR}
   ${LOVR_OCULUS}
-  ${LOVR_OCULUS_AUDIO}
   ${LOVR_LEAP}
   ${LOVR_PHYSFS}
   ${LOVR_PTHREADS}
@@ -376,7 +376,11 @@ if(LOVR_ENABLE_AUDIO)
 
     if(ANDROID) # Assume 64 bit on Android and Linux; build static on Android
       add_library(OculusAudio STATIC IMPORTED)
-      set_target_properties(OculusAudio PROPERTIES IMPORTED_LOCATION "${LOVR_OCULUS_AUDIO_PATH}/Lib/Android/arm64-v8a/libovraudiostatic64.a")
+      set_target_properties(OculusAudio PROPERTIES
+        IMPORTED_LOCATION "${LOVR_OCULUS_AUDIO_PATH}/Lib/Android/arm64-v8a/libovraudiostatic64.a"
+        CXX_STANDARD 11
+        CXX_STANDARD_REQUIRED YES
+      )
     else()
       add_library(OculusAudio SHARED IMPORTED)
       if(WIN32) # Note: This has *not* been tested.
@@ -396,6 +400,7 @@ if(LOVR_ENABLE_AUDIO)
 
     set(LOVR_OCULUS_AUDIO OculusAudio)
     add_definitions(-DLOVR_ENABLE_OCULUS_AUDIO)
+    target_link_libraries(lovr ${LOVR_OCULUS_AUDIO}) # TODO: Reorder?
   endif()
 endif()
 

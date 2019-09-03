@@ -28,6 +28,10 @@ static struct {
   float offset;
 } state;
 
+#ifdef LOVR_ENABLE_OCULUS_AUDIO
+static void lovrOculusMobileAudioState(double displayTime, BridgeLovrPose lastHeadPose, BridgeLovrMovement lastHeadMovement);
+#endif
+
 // Headset driver object
 
 static bool vrapi_init(float offset, uint32_t msaa) {
@@ -544,3 +548,44 @@ void bridgeLovrClose() {
   lua_close(L);
   free(lovrOculusMobileWritablePath);
 }
+
+#ifdef LOVR_ENABLE_OCULUS_AUDIO
+#include "audio/audio.h"
+#include "headset/oculus_math_shim.h"
+#include "OVR_Audio.h"
+
+static struct {
+  double displayTime;
+  BridgeLovrPose pose;
+  BridgeLovrMovement movement;
+} audioState;
+
+void lovrOculusMobileAudioState(double displayTime, BridgeLovrPose lastHeadPose, BridgeLovrMovement lastHeadMovement) {
+  lovrAudioLock();
+  audioState.displayTime = displayTime;
+  audioState.pose = lastHeadPose;
+  audioState.movement = lastHeadMovement;
+  lovrAudioUnlock();
+}
+
+void lovrOculusMobileUnpackQuat(ovrQuatf *oq, float *lq) {
+  oq->x = lq[0]; oq->y = lq[1]; oq->z = lq[2]; oq->w = lq[3];
+}
+void lovrOculusMobileUnpackVec(ovrVector3f *ov, float x, float y, float z) {
+  ov->x = x; ov->y = y; ov->z = z;
+}
+
+void lovrOculusMobileRecreatePose(void *ovrposestatef) {
+  ovrPoseStatef *out = (ovrPoseStatef *)ovrposestatef;
+
+  ovrPosef pose;
+  lovrOculusMobileUnpackVec(&pose.Position, audioState.pose.x, audioState.pose.y, audioState.pose.z);
+  lovrOculusMobileUnpackQuat(&pose.Orientation, audioState.pose.q);
+  out->ThePose = pose;
+  lovrOculusMobileUnpackVec(&out->AngularVelocity, audioState.movement.velocity.ax, audioState.movement.velocity.ay, audioState.movement.velocity.az);
+  lovrOculusMobileUnpackVec(&out->LinearVelocity, audioState.movement.velocity.x, audioState.movement.velocity.y, audioState.movement.velocity.z);
+  lovrOculusMobileUnpackVec(&out->AngularAcceleration, audioState.movement.acceleration.ax, audioState.movement.acceleration.ay, audioState.movement.acceleration.az);
+  lovrOculusMobileUnpackVec(&out->LinearAcceleration, audioState.movement.acceleration.x, audioState.movement.acceleration.y, audioState.movement.acceleration.z);
+  out->TimeInSeconds = audioState.displayTime;
+}
+#endif
