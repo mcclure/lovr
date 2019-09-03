@@ -374,28 +374,21 @@ if(LOVR_ENABLE_AUDIO)
 
     include_directories("${LOVR_OCULUS_AUDIO_PATH}/Include")
 
-    if(ANDROID) # Assume 64 bit on Android and Linux; build static on Android
-      add_library(OculusAudio STATIC IMPORTED)
-      set_target_properties(OculusAudio PROPERTIES
-        IMPORTED_LOCATION "${LOVR_OCULUS_AUDIO_PATH}/Lib/Android/arm64-v8a/libovraudiostatic64.a"
-        CXX_STANDARD 11
-        CXX_STANDARD_REQUIRED YES
-      )
-    else()
-      add_library(OculusAudio SHARED IMPORTED)
-      if(WIN32) # Note: This has *not* been tested.
-        if (CMAKE_GENERATOR_PLATFORM STREQUAL "x64")
-          set_target_properties(OculusAudio PROPERTIES IMPORTED_IMPLIB "${LOVR_OCULUS_AUDIO_PATH}/Lib/x64/ovraudio64.lib")
-          set_target_properties(OculusAudio PROPERTIES IMPORTED_LOCATION "${LOVR_OCULUS_AUDIO_PATH}/Lib/x64/ovraudio64.dll")
-        else () # ARM and ARM64 are also valid values for CMAKE_GENERATOR_PLATFORM but we will ignore this
-          set_target_properties(OculusAudio PROPERTIES IMPORTED_IMPLIB "${LOVR_OCULUS_AUDIO_PATH}/Lib/Win32/ovraudio32.lib")
-          set_target_properties(OculusAudio PROPERTIES IMPORTED_LOCATION "${LOVR_OCULUS_AUDIO_PATH}/Lib/Win32/ovraudio32.dll")
-        elseif (APPLE) # This *might* be possible-- there is a .framework in "macub/" ("universal binary"?)
-          message(FATAL_ERROR "LOVR_USE_OCULUS_AUDIO is not currently supported on Apple platforms")
-        else() # Assume Linux. Note: This has *not* been tested. FIXME: When is the .so copied?
-          set_target_properties(OculusAudio PROPERTIES IMPORTED_LOCATION "${LOVR_OCULUS_AUDIO_PATH}/Lib/Linux64/libovraudio64.so")
-        endif()
+    add_library(OculusAudio SHARED IMPORTED)
+    if (ANDROID)
+      set_target_properties(OculusAudio PROPERTIES IMPORTED_LOCATION "${LOVR_OCULUS_AUDIO_PATH}/Lib/Android/arm64-v8a/libovraudio64.so")
+    elseif(WIN32) # Note: This has *not* been tested.
+      if (CMAKE_GENERATOR_PLATFORM STREQUAL "x64")
+        set_target_properties(OculusAudio PROPERTIES IMPORTED_IMPLIB "${LOVR_OCULUS_AUDIO_PATH}/Lib/x64/ovraudio64.lib")
+        set_target_properties(OculusAudio PROPERTIES IMPORTED_LOCATION "${LOVR_OCULUS_AUDIO_PATH}/Lib/x64/ovraudio64.dll")
+      else () # ARM and ARM64 are also valid values for CMAKE_GENERATOR_PLATFORM but we will ignore this
+        set_target_properties(OculusAudio PROPERTIES IMPORTED_IMPLIB "${LOVR_OCULUS_AUDIO_PATH}/Lib/Win32/ovraudio32.lib")
+        set_target_properties(OculusAudio PROPERTIES IMPORTED_LOCATION "${LOVR_OCULUS_AUDIO_PATH}/Lib/Win32/ovraudio32.dll")
       endif()
+    elseif (APPLE) # This *might* be possible-- there is a .framework in "macub/" ("universal binary"?)
+      message(FATAL_ERROR "LOVR_USE_OCULUS_AUDIO is not currently supported on Apple platforms")
+    else() # Assume Linux. Note: This has *not* been tested. FIXME: When is the .so copied?
+      set_target_properties(OculusAudio PROPERTIES IMPORTED_LOCATION "${LOVR_OCULUS_AUDIO_PATH}/Lib/Linux64/libovraudio64.so")
     endif()
 
     set(LOVR_OCULUS_AUDIO OculusAudio)
