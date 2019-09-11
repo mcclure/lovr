@@ -466,6 +466,7 @@ void bridgeLovrInit(BridgeLovrInitData *initData) {
 void bridgeLovrUpdate(BridgeLovrUpdateData *updateData) {
   // Unpack update data
   bridgeLovrMobileData.updateData = *updateData;
+  lovrOculusMobileAudioState(updateData->displayTime, updateData->lastHeadPose, updateData->lastHeadMovement);
 
   if (pauseState == PAUSESTATE_BUG) { // Bad frame-- replace bad time with last known good oculus time
     bridgeLovrMobileData.updateData.displayTime = lastPauseAtRaw;
@@ -564,6 +565,7 @@ void lovrOculusMobileAudioState(double displayTime, BridgeLovrPose lastHeadPose,
   lovrAudioLock();
   audioState.displayTime = displayTime;
   audioState.pose = lastHeadPose;
+  audioState.pose.y += state.offset;
   audioState.movement = lastHeadMovement;
   lovrAudioUnlock();
 }
