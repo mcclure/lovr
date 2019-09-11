@@ -17,6 +17,15 @@
 #include "modules/filesystem/file.h"
 #endif
 
+// On some platforms if we request a callback length of N miniaudio will tend to actually give us callbacks of size N/3 because of "periods"
+#define CALLBACK_PERIODS 3
+#define BUFFER_LENGTH 128
+#define CALLBACK_LENGTH (BUFFER_LENGTH*CALLBACK_PERIODS)
+
+#ifdef LOVR_ENABLE_OCULUS_AUDIO
+#define LOVR_REGULARIZE_CALLBACK_LENGTH
+#endif
+
 typedef arr_t(float) float_arr_t;
 
 static struct {
@@ -58,6 +67,10 @@ static void lovrAudioUpmix(float *output, float *input, int frames, int channels
       output[o] = input[f];
     }
   }
+}
+
+static void lovrAudioCopy(float *output, float *input, int frames, int channels) {
+  memcpy(output, input, frames*channels*sizeof(float));
 }
 
 static void lovrAudioZero(float *output, int frames, int channels) {
@@ -143,9 +156,6 @@ static void handler(ma_device* device, void* output, const void* input, uint32_t
   float *decode = getReservedBuffer(&state.decodeBuffer, frames, 1);
 
 #ifdef LOVR_ENABLE_OCULUS_AUDIO
-  if (!oastate.bufferSize)
-    lovrSpatializerRealInit(frames);
-
   float *unpack = getReservedBuffer(&oastate.unpackBuffer, frames, 2);
   lovrAudioZero(output, frames, 2); // This path assumes output is stereo since that's what we request below.
 
@@ -249,6 +259,45 @@ static void handler(ma_device* device, void* output, const void* input, uint32_t
   ma_mutex_unlock(&state.lock);
 }
 
+#ifdef LOVR_REGULARIZE_CALLBACK_LENGTH
+// Miniaudio cannot guarantee us fixed-length callbacks. However, Oculus Audio requires them.
+// Chop up the output buffer into regularly sized chunks, and save any overshoot until next callback.
+// TODO: This entirely does not work with input
+static struct {
+  float_arr_t regularizeBuffer; // Run handler() into this buffer
+  int leftover; // Unused frames from last run
+} regularizerState;
+static void miniaudioHandler(ma_device* device, void* output, const void* input, uint32_t frames) {
+  float *regularize = getReservedBuffer(&regularizerState.regularizeBuffer, frames, 2); // This path assumes output is stereo since that's what we request below.
+  float *outputFloat = output;
+  if (regularizerState.leftover > 0) {
+    int leftoverCopy = MIN(frames, regularizerState.leftover);
+    float *leftoverCopyFrom = regularize + ((BUFFER_LENGTH - leftoverCopy) * 2);
+    lovrAudioCopy(outputFloat, leftoverCopyFrom, leftoverCopy, 2);
+
+    outputFloat += (leftoverCopy*2);
+    regularizerState.leftover -= leftoverCopy;
+    frames -= leftoverCopy;
+  }
+  while (frames > 0) {
+    if (frames < BUFFER_LENGTH) { // Not enough room to fit in output. Save some for later.
+      handler(device, regularize, input, BUFFER_LENGTH);
+
+      lovrAudioCopy(outputFloat, regularize, frames, 2);
+      regularizerState.leftover = BUFFER_LENGTH - frames;
+      break; // Done
+    }
+   
+    handler(device, outputFloat, input, BUFFER_LENGTH);
+
+    outputFloat += (BUFFER_LENGTH*2);
+    frames -= BUFFER_LENGTH;
+  }
+}
+#else
+#define miniaudioHandler handler
+#endif
+
 bool lovrAudioInit() {
   if (state.initialized) return false;
 
@@ -256,11 +305,24 @@ bool lovrAudioInit() {
   config.playback.format = ma_format_f32;
   config.playback.channels = 2;
   config.sampleRate = SAMPLE_RATE;
-  config.dataCallback = handler;
+  config.dataCallback = miniaudioHandler;
+  config.bufferSizeInFrames = CALLBACK_LENGTH;
+  config.periods = CALLBACK_PERIODS;
 
   if (lovrSpatializerInit(config.sampleRate)) {
     return false;
   }
+
+#ifdef LOVR_ENABLE_OCULUS_AUDIO
+  // Initialize spatializer and presize to some good guesses for their real lengths
+  lovrSpatializerRealInit(BUFFER_LENGTH);
+  getReservedBuffer(&regularizerState.regularizeBuffer, BUFFER_LENGTH, 2);
+  getReservedBuffer(&state.decodeBuffer, BUFFER_LENGTH, 1);
+  getReservedBuffer(&oastate.unpackBuffer, BUFFER_LENGTH, 2);
+#else
+  getReservedBuffer(&state.decodeBuffer, CALLBACK_LENGTH, 1);
+  getReservedBuffer(&state.accumulateBuffer, CALLBACK_LENGTH, 1);
+#endif
 
   if (ma_device_init(NULL, &config, &state.device)) {
     return false;
