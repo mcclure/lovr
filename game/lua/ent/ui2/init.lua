@@ -243,6 +243,7 @@ function ui2.UiEnt:onMirror()
 	local center = self.bound:center()
 	local size = self.bound:size()
 
+	lovr.graphics.setColor(1,1,1,1)
 	lovr.graphics.setFont(flat.font)
 	lovr.graphics.print(self.label, center.x, center.y, 0, flat.fontscale)
 end
@@ -271,7 +272,6 @@ function ui2.ButtonEnt:onMirror()
 	local gray = self.down and 0.5 or 0.8
 	lovr.graphics.setColor(gray,gray,gray,0.8)
 	lovr.graphics.plane('fill', center.x, center.y, 0, size.x, size.y)
-	lovr.graphics.setColor(1,1,1,1)
 
 	ui2.UiEnt.onMirror(self)
 end
@@ -346,7 +346,7 @@ function ui2.SliderEnt:onPress(at)
 			(at.x - (self.bound.min.x + self.handleWidth/2))/self.lineWidth,
 			0,1
 		) * (self.maxRange-self.minRange) + self.minRange
-		if self.onChange then self:onChange() end -- See also: self:onButton "is it weird"?
+		if self.onChange then self:onChange(self.value) end -- See also: self:onButton "is it weird"?
 	end
 end
 
@@ -429,7 +429,7 @@ function ui2.SliderTripletEnt:_init(spec)
 
 	local sliderSpec = {value=self.value, onChange = function(slider)
 		self.value = slider.value
-		if self.onChange then self:onChange() end
+		if self.onChange then self:onChange(self.value) end
 	end}
 	pull(sliderSpec, self.sliderSpec)
 	self.sliderEnt = self.sliderEnt or ui2.SliderEnt(sliderSpec)
