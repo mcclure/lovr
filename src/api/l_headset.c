@@ -570,7 +570,7 @@ int luaopen_lovr_headset(lua_State* L) {
     lua_pop(L, 1);
   }
 
-#if LOVR_USE_FAKE_HEADSET
+#if LOVR_USE_DESKTOP_HEADSET
   // Deal with fake headset 
   lua_getfield(L, LUA_REGISTRYINDEX, "_lovrconf");
   lua_getfield(L, -1, "headset"); // FIXME: Could be nil?
