@@ -9,14 +9,16 @@
 #include <android/log.h>
 #include "platform.h"
 
-#define LOG(...) __android_log_print(ANDROID_LOG_DEBUG, "LOVR", __VA_ARGS__)
-#define WARN(...) __android_log_print(ANDROID_LOG_WARN, "LOVR", __VA_ARGS__)
+#define LOG(...)  __android_log_print(ANDROID_LOG_DEBUG, "LOVR", __VA_ARGS__)
+#define INFO(...) __android_log_print(ANDROID_LOG_INFO,  "LOVR", __VA_ARGS__)
+#define WARN(...) __android_log_print(ANDROID_LOG_WARN,  "LOVR", __VA_ARGS__)
 
 // Data passed from bridge code to headset code
 
 static struct {
   BridgeLovrDimensions displayDimensions;
   BridgeLovrDevice deviceType;
+  BridgeLovrVibrateFunction* vibrateFunction;
   BridgeLovrUpdateData updateData;
 } bridgeLovrMobileData;
 
@@ -115,10 +117,6 @@ static bool vrapi_getPose(Device device, vec3 position, quat orientation) {
   vec3_set(position, pose->x, pose->y + state.offset, pose->z);
   quat_init(orientation, pose->q);
   return true;
-}
-
-static bool vrapi_getBonePose(Device device, DeviceBone bone, vec3 position, quat orientation) {
-  return false;
 }
 
 static bool vrapi_getVelocity(Device device, vec3 velocity, vec3 angularVelocity) {
@@ -232,7 +230,14 @@ static bool vrapi_getAxis(Device device, DeviceAxis axis, float* value) {
 }
 
 static bool vrapi_vibrate(Device device, float strength, float duration, float frequency) {
-  return false;
+  int controller;
+  if (device == DEVICE_HAND_LEFT)
+    controller = 0;
+  else if (device == DEVICE_HAND_RIGHT)
+    controller = 1;
+  else
+    return false;
+  return bridgeLovrMobileData.vibrateFunction(controller, strength, duration); // Frequency currently discarded
 }
 
 static ModelData* vrapi_newModelData(Device device) {
@@ -259,7 +264,6 @@ HeadsetInterface lovrHeadsetOculusMobileDriver = {
   .getBoundsDimensions = vrapi_getBoundsDimensions,
   .getBoundsGeometry = vrapi_getBoundsGeometry,
   .getPose = vrapi_getPose,
-  .getBonePose = vrapi_getBonePose,
   .getVelocity = vrapi_getVelocity,
   .isDown = vrapi_isDown,
   .isTouched = vrapi_isTouched,
@@ -343,28 +347,18 @@ int luax_print(lua_State* L) {
     lua_pushvalue(L, i);
     lua_call(L, 1, 1);
     lovrAssert(lua_type(L, -1) == LUA_TSTRING, LUA_QL("tostring") " must return a string to " LUA_QL("print"));
-    luaL_addvalue(&buffer);
     if (i > 1) {
       luaL_addchar(&buffer, '\t');
     }
+    luaL_addvalue(&buffer);
   }
   luaL_pushresult(&buffer);
-  LOG("%s", lua_tostring(L, -1));
+  INFO("%s", lua_tostring(L, -1));
   return 0;
 }
 
-static void android_vthrow(lua_State* L, const char* format, va_list args) {
-  #define MAX_ERROR_LENGTH 1024
-  char lovrErrorMessage[MAX_ERROR_LENGTH];
-  vsnprintf(lovrErrorMessage, MAX_ERROR_LENGTH, format, args);
-  WARN("Error: %s\n", lovrErrorMessage);
-  assert(0);
-}
-
 static int luax_custom_atpanic(lua_State *L) {
-  // This doesn't appear to get a sensible stack. Maybe Luajit would work better?
-  luax_traceback(L, L, lua_tostring(L, -1), 0); // Pushes the traceback onto the stack
-  lovrThrow("Lua panic: %s", lua_tostring(L, -1));
+  WARN("PANIC: unprotected error in call to Lua API (%s)\n", lua_tostring(L, -1));
   return 0;
 }
 
@@ -373,12 +367,10 @@ static void bridgeLovrInitState() {
   // Copypaste the init sequence from lovrRun:
   // Load libraries
   L = luaL_newstate(); // FIXME: Can this be handed off to main.c?
-  luax_setmainthread(L);
-  lua_atpanic(L, luax_custom_atpanic);
   luaL_openlibs(L);
   LOG("\n OPENED LIB\n");
-
-  lovrSetErrorCallback((errorFn*) android_vthrow, L);
+  lua_atpanic(L, luax_custom_atpanic);
+  luax_setmainthread(L);
 
   // Install custom print
   lua_pushcfunction(L, luax_print);
@@ -425,7 +417,6 @@ static void bridgeLovrInitState() {
 
   coroutineStartFunctionRef = luaL_ref(L, LUA_REGISTRYINDEX); // Value returned by boot.lua
   T = lua_newthread(L); // Leave L clear to be used by the draw function
-  lua_atpanic(T, luax_custom_atpanic);
   coroutineRef = luaL_ref(L, LUA_REGISTRYINDEX); // Hold on to the Lua-side coroutine object so it isn't GC'd
 
   LOG("\n STATE INIT COMPLETE\n");
@@ -447,6 +438,7 @@ void bridgeLovrInit(BridgeLovrInitData *initData) {
   bridgeLovrMobileData.displayDimensions = initData->suggestedEyeTexture;
   bridgeLovrMobileData.updateData.displayTime = initData->zeroDisplayTime;
   bridgeLovrMobileData.deviceType = initData->deviceType;
+  bridgeLovrMobileData.vibrateFunction = initData->vibrateFunction;
 
   free(apkPath);
   size_t length = strlen(initData->apkPath);
@@ -480,6 +472,7 @@ void bridgeLovrUpdate(BridgeLovrUpdateData *updateData) {
 
   luax_geterror(T);
   luax_clearerror(T);
+  lovrSetErrorCallback(luax_vthrow, T);
   if (lua_resume(T, 1) != LUA_YIELD) {
     if (lua_type(T, -1) == LUA_TSTRING && !strcmp(lua_tostring(T, -1), "restart")) {
       state.renderCallback = NULL;
@@ -517,6 +510,7 @@ void bridgeLovrDraw(BridgeLovrDrawData *drawData) {
 
   lovrGraphicsSetCamera(&camera, true);
 
+  lovrSetErrorCallback(luax_vthrow, L);
   state.renderCallback(state.renderUserdata);
 
   lovrGraphicsSetCamera(NULL, false);

@@ -48,11 +48,13 @@ local function nogame()
   function lovr.draw()
     lovr.graphics.setColor(0xffffff)
 
-    for i, hand in ipairs(lovr.headset.getHands()) do
-      models[hand] = models[hand] or lovr.headset.newModel(hand)
-      if models[hand] then
-        local x, y, z, angle ax, ay, az = lovr.headset.getPose(hand)
-        models[hand]:draw(x, y, z, 1.0, angle, ax, ay, az)
+    if lovr.headset then
+      for i, hand in ipairs(lovr.headset.getHands()) do
+        models[hand] = models[hand] or lovr.headset.newModel(hand)
+        if models[hand] then
+          local x, y, z, angle ax, ay, az = lovr.headset.getPose(hand)
+          models[hand]:draw(x, y, z, 1.0, angle, ax, ay, az)
+        end
       end
     end
 
@@ -104,6 +106,7 @@ function lovr.boot()
       width = 1080,
       height = 600,
       fullscreen = false,
+      resizable = false,
       msaa = 0,
       title = 'LÖVR',
       icon = nil,
@@ -219,9 +222,11 @@ function lovr.errhand(message, traceback)
   return function()
     lovr.event.pump()
     for name, a in lovr.event.poll() do if name == 'quit' then return a or 1 end end
-    lovr.headset.update(0)
     lovr.graphics.origin()
-    if lovr.headset then lovr.headset.renderTo(render) end
+    if lovr.headset then
+      lovr.headset.update(0)
+      lovr.headset.renderTo(render)
+    end
     if lovr.graphics.hasWindow() then
       lovr.graphics.clear()
       render(true)

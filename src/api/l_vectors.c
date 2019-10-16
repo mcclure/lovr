@@ -1275,7 +1275,7 @@ static int l_lovrQuatMul(lua_State* L) {
   quat q = luax_checkvector(L, 1, V_QUAT, NULL);
   VectorType type;
   float* r = luax_tovector(L, 2, &type);
-  if (!r || type == V_MAT4) return luaL_typerror(L, 2, "quat or vec3");
+  if (!r || (type != V_VEC3 && type != V_QUAT)) return luaL_typerror(L, 2, "quat or vec3");
   if (type == V_VEC3) {
     quat_rotate(q, r);
     lua_settop(L, 2);
@@ -1436,12 +1436,10 @@ static int l_lovrMat4Unpack(lua_State* L) {
     }
     return 16;
   } else {
-    float angle, ax, ay, az;
-    float position[4], orientation[4], scale[4];
+    float position[4], scale[4], angle, ax, ay, az;
     mat4_getPosition(m, position);
     mat4_getScale(m, scale);
-    mat4_getOrientation(m, orientation);
-    quat_getAngleAxis(orientation, &angle, &ax, &ay, &az); // TODO mat4_getAngleAxis (see math.lua)
+    mat4_getAngleAxis(m, &angle, &ax, &ay, &az);
     lua_pushnumber(L, position[0]);
     lua_pushnumber(L, position[1]);
     lua_pushnumber(L, position[2]);
@@ -1526,6 +1524,10 @@ static int l_lovrMat4Mul(lua_State* L) {
     mat4_transform(m, n);
     lua_settop(L, 2);
     return 1;
+  } else if (n && type == V_VEC4) {
+    mat4_multiplyVec4(m, n);
+    lua_settop(L, 2);
+    return 1;
   } else if (lua_type(L, 2) == LUA_TNUMBER) {
     float x = luaL_checknumber(L, 2);
     float y = luaL_optnumber(L, 3, 0.f);
@@ -1577,7 +1579,7 @@ static int l_lovrMat4Translate(lua_State* L) {
 static int l_lovrMat4Rotate(lua_State* L) {
   mat4 m = luax_checkvector(L, 1, V_MAT4, NULL);
   if (lua_type(L, 2) == LUA_TNUMBER) {
-    mat4_rotate(m, luax_checkfloat(L, 2), luax_checkfloat(L, 3), luax_checkfloat(L, 4), luax_checkfloat(L, 5));
+    mat4_rotate(m, luax_checkfloat(L, 2), luax_optfloat(L, 3, 0.f), luax_optfloat(L, 4, 1.f), luax_optfloat(L, 5, 0.f));
   } else {
     float* q = luax_checkvector(L, 2, V_QUAT, "quat or number");
     mat4_rotateQuat(m, q);
@@ -1640,7 +1642,7 @@ static int l_lovrMat4LookAt(lua_State* L) {
   mat4 m = luax_checkvector(L, 1, V_MAT4, NULL);
   vec3 from = luax_checkvector(L, 2, V_VEC3, NULL);
   vec3 to = luax_checkvector(L, 3, V_VEC3, NULL);
-  vec3 up = lua_isnoneornil(L, 4) ? (float[4]) { 0.f, 1.f, 0.f } : luax_checkvector(L, 3, V_VEC3, NULL);
+  vec3 up = lua_isnoneornil(L, 4) ? (float[4]) { 0.f, 1.f, 0.f } : luax_checkvector(L, 4, V_VEC3, NULL);
   mat4_lookAt(m, from, to, up);
   lua_settop(L, 1);
   return 1;
@@ -1650,14 +1652,20 @@ static int l_lovrMat4__mul(lua_State* L) {
   mat4 m = luax_checkvector(L, 1, V_MAT4, NULL);
   VectorType type;
   float* n = luax_tovector(L, 2, &type);
-  if (!n || type == V_QUAT) return luaL_typerror(L, 2, "mat4 or vec3");
+  if (!n || (type == V_VEC2 || type == V_QUAT)) return luaL_typerror(L, 2, "mat4, vec3, or vec4");
   if (type == V_MAT4) {
     mat4 out = luax_newtempvector(L, V_MAT4);
     mat4_multiply(mat4_init(out, m), n);
-  } else {
+  } else if (type == V_VEC3) {
     vec3 out = luax_newtempvector(L, V_VEC3);
     vec3_init(out, n);
     mat4_transform(m, n);
+  } else if (type == V_VEC4) {
+    float* out = luax_newtempvector(L, V_VEC4);
+    memcpy(out, n, 4 * sizeof(float));
+    mat4_multiplyVec4(m, out);
+  } else {
+    lovrThrow("Unreachable");
   }
   return 1;
 }

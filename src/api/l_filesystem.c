@@ -1,5 +1,4 @@
 #include "api.h"
-#include "util.h"
 #include "filesystem/filesystem.h"
 #include "filesystem/file.h"
 #include "data/blob.h"
@@ -63,7 +62,7 @@ static int l_lovrFilesystemAppend(lua_State* L) {
   size_t size;
   const char* path = luaL_checkstring(L, 1);
   const char* content = luaL_checklstring(L, 2, &size);
-  lua_pushnumber(L, lovrFilesystemWrite(path, content, size, 1));
+  lua_pushnumber(L, lovrFilesystemWrite(path, content, size, true));
   return 1;
 }
 
@@ -288,7 +287,7 @@ static int l_lovrFilesystemWrite(lua_State* L) {
   size_t size;
   const char* path = luaL_checkstring(L, 1);
   const char* content = luaL_checklstring(L, 2, &size);
-  lua_pushnumber(L, lovrFilesystemWrite(path, content, size, 0));
+  lua_pushnumber(L, lovrFilesystemWrite(path, content, size, false));
   return 1;
 }
 
@@ -446,7 +445,7 @@ static int libLoader(lua_State* L) {
   return 0;
 }
 
-LOVR_EXPORT int luaopen_lovr_filesystem(lua_State* L) {
+int luaopen_lovr_filesystem(lua_State* L) {
   lua_getglobal(L, "arg");
   if (lua_istable(L, -1)) {
     lua_getfield(L, -1, "exe");

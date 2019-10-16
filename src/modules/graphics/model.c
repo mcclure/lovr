@@ -192,18 +192,35 @@ Model* lovrModelCreate(ModelData* data) {
 
 void lovrModelDestroy(void* ref) {
   Model* model = ref;
-  for (uint32_t i = 0; i < model->data->bufferCount; i++) {
-    lovrRelease(Buffer, model->buffers[i]);
+
+  if (model->buffers) {
+    for (uint32_t i = 0; i < model->data->bufferCount; i++) {
+      lovrRelease(Buffer, model->buffers[i]);
+    }
+    free(model->buffers);
   }
-  for (uint32_t i = 0; i < model->data->primitiveCount; i++) {
-    lovrRelease(Mesh, model->meshes[i]);
+
+  if (model->meshes) {
+    for (uint32_t i = 0; i < model->data->primitiveCount; i++) {
+      lovrRelease(Mesh, model->meshes[i]);
+    }
+    free(model->meshes);
   }
-  for (uint32_t i = 0; i < model->data->textureCount; i++) {
-    lovrRelease(Texture, model->textures[i]);
+
+  if (model->textures) {
+    for (uint32_t i = 0; i < model->data->textureCount; i++) {
+      lovrRelease(Texture, model->textures[i]);
+    }
+    free(model->textures);
   }
-  for (uint32_t i = 0; i < model->data->materialCount; i++) {
-    lovrRelease(Material, model->materials[i]);
+
+  if (model->materials) {
+    for (uint32_t i = 0; i < model->data->materialCount; i++) {
+      lovrRelease(Material, model->materials[i]);
+    }
+    free(model->materials);
   }
+
   lovrRelease(ModelData, model->data);
   free(model->globalTransforms);
   free(model->localTransforms);
@@ -250,7 +267,14 @@ void lovrModelAnimate(Model* model, uint32_t animationIndex, float time, float a
     float* (*lerp)(float* a, float* b, float t) = rotate ? quat_slerp : vec3_lerp;
 
     if (keyframe == 0 || keyframe >= channel->keyframeCount) {
-      memcpy(property, channel->data + CLAMP(keyframe, 0, channel->keyframeCount - 1) * n, n * sizeof(float));
+      size_t index = CLAMP(keyframe, 0, channel->keyframeCount - 1);
+
+      // For cubic interpolation, each keyframe has 3 parts, and the actual data is in the middle (*3, +1)
+      if (channel->smoothing == SMOOTH_CUBIC) {
+        index = 3 * index + 1;
+      }
+
+      memcpy(property, channel->data + index * n, n * sizeof(float));
     } else {
       float t1 = channel->times[keyframe - 1];
       float t2 = channel->times[keyframe];

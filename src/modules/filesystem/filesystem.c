@@ -8,6 +8,7 @@
 #include <stdio.h>
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
+#include <objc/objc-runtime.h>
 #endif
 #if _WIN32
 #include <windows.h>
@@ -39,6 +40,36 @@ static struct {
   char requirePath[2][1024];
 } state;
 
+// Return the path to a LÖVR archive bundled to the executable.
+// On most platforms, the zip is appended to the executable file itself.
+// On macOS, we have to use Objective C to find it inside the .app folder.
+static bool getBundlePath(char* buffer, size_t size) {
+#ifdef __APPLE__
+  id extension = ((id(*)(Class, SEL, char*))objc_msgSend)(objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"), "lovr");
+  id bundle = ((id(*)(Class, SEL))objc_msgSend)(objc_getClass("NSBundle"), sel_registerName("mainBundle"));
+  id path = ((id(*)(id, SEL, char*, id))objc_msgSend)(bundle, sel_registerName("pathForResource:ofType:"), nil, extension);
+  if (path == nil) {
+    return false;
+  }
+
+  const char* cpath = ((const char*(*)(id, SEL))objc_msgSend)(path, sel_registerName("UTF8String"));
+  if (!cpath) {
+    return false;
+  }
+
+  size_t length = strlen(cpath);
+  if (length >= size) {
+    return false;
+  }
+
+  memcpy(buffer, cpath, length);
+  buffer[length] = '\0';
+  return true;
+#else
+  return lovrFilesystemGetExecutablePath(buffer, size) == 0;
+#endif
+}
+
 bool lovrFilesystemInit(const char* argExe, const char* argGame, const char* argRoot) {
   if (state.initialized) return false;
   state.initialized = true;
@@ -55,19 +86,20 @@ bool lovrFilesystemInit(const char* argExe, const char* argGame, const char* arg
   lovrFilesystemSetRequirePath("?.lua;?/init.lua;lua_modules/?.lua;lua_modules/?/init.lua;deps/?.lua;deps/?/init.lua");
   lovrFilesystemSetCRequirePath("??;lua_modules/??;deps/??");
 
-  // Try to mount either an archive fused to the executable or an archive from the command line
-  lovrFilesystemGetExecutablePath(state.source, LOVR_PATH_MAX);
-  if (!lovrFilesystemMount(state.source, NULL, 1, argRoot)) { // Attempt to load fused. If that fails...
+  // Try to mount an archive fused to the executable
+  if (!getBundlePath(state.source, LOVR_PATH_MAX) || !lovrFilesystemMount(state.source, NULL, 1, argRoot)) {
     state.fused = false;
 
+    // If that didn't work, try loading an archive from the command line
     if (argGame) {
       strncpy(state.source, argGame, LOVR_PATH_MAX);
-      if (lovrFilesystemMount(state.source, NULL, 1, argRoot)) { // Attempt to load from arg. If success, init is done
+      if (lovrFilesystemMount(state.source, NULL, 1, argRoot)) {
         return true;
       }
     }
 
-    free(state.source); // Couldn't load from argProject, so apparently it isn't the source
+    // Otherwise, give up
+    free(state.source);
     state.source = NULL;
   }
 

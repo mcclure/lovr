@@ -7,7 +7,11 @@
 
 #pragma once
 
+#ifdef MAF_EXPORT
+#define MAF LOVR_EXPORT
+#else
 #define MAF static LOVR_INLINE
+#endif
 
 typedef float* vec3;
 typedef float* quat;
@@ -509,6 +513,18 @@ MAF mat4 mat4_multiply(mat4 m, mat4 n) {
   return m;
 }
 
+MAF float* mat4_multiplyVec4(mat4 m, float* v) {
+  float x = v[0] * m[0] + v[1] * m[4] + v[2] * m[8] + v[3] * m[12];
+  float y = v[0] * m[1] + v[1] * m[5] + v[2] * m[9] + v[3] * m[13];
+  float z = v[0] * m[2] + v[1] * m[6] + v[2] * m[10] + v[3] * m[14];
+  float w = v[0] * m[3] + v[1] * m[7] + v[2] * m[11] + v[3] * m[15];
+  v[0] = x;
+  v[1] = y;
+  v[2] = z;
+  v[3] = w;
+  return v;
+}
+
 MAF mat4 mat4_translate(mat4 m, float x, float y, float z) {
   m[12] = m[0] * x + m[4] * y + m[8] * z + m[12];
   m[13] = m[1] * x + m[5] * y + m[9] * z + m[13];
@@ -556,6 +572,22 @@ MAF void mat4_getPosition(mat4 m, vec3 position) {
 
 MAF void mat4_getOrientation(mat4 m, quat orientation) {
   quat_fromMat4(orientation, m);
+}
+
+MAF void mat4_getAngleAxis(mat4 m, float* angle, float* ax, float* ay, float* az) {
+  float sx = vec3_length(m + 0);
+  float sy = vec3_length(m + 4);
+  float sz = vec3_length(m + 8);
+  float diagonal[4] = { m[0], m[5], m[10] };
+  float axis[4] = { m[6] - m[9], m[8] - m[2], m[1] - m[4] };
+  diagonal[0] /= sx;
+  diagonal[1] /= sy;
+  diagonal[2] /= sz;
+  vec3_normalize(axis);
+  *angle = acosf((diagonal[0] + diagonal[1] + diagonal[2] - 1.f) / 2.f);
+  *ax = axis[0];
+  *ay = axis[1];
+  *az = axis[2];
 }
 
 MAF void mat4_getScale(mat4 m, vec3 scale) {
@@ -611,27 +643,27 @@ MAF mat4 mat4_fov(mat4 m, float left, float right, float up, float down, float c
 }
 
 MAF mat4 mat4_lookAt(mat4 m, vec3 from, vec3 to, vec3 up) {
-  float z[4];
   float x[4];
   float y[4];
-  vec3_sub(vec3_init(z, to), from);
+  float z[4];
+  vec3_normalize(vec3_sub(vec3_init(z, from), to));
   vec3_normalize(vec3_cross(vec3_init(x, up), z));
   vec3_cross(vec3_init(y, z), x);
   m[0] = x[0];
-  m[1] = y[0];
-  m[2] = z[0];
+  m[1] = x[1];
+  m[2] = x[2];
   m[3] = 0.f;
-  m[4] = x[1];
+  m[4] = y[0];
   m[5] = y[1];
-  m[6] = z[1];
+  m[6] = y[2];
   m[7] = 0.f;
-  m[8] = x[2];
-  m[9] = y[2];
+  m[8] = z[0];
+  m[9] = z[1];
   m[10] = z[2];
   m[11] = 0.f;
-  m[12] = 0.f;
-  m[13] = 0.f;
-  m[14] = 0.f;
+  m[12] = from[0];
+  m[13] = from[1];
+  m[14] = from[2];
   m[15] = 1.f;
   return m;
 }

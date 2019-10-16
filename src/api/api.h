@@ -2,21 +2,22 @@
 #include <lauxlib.h>
 #include <lualib.h>
 #include <stdint.h>
+#include "util.h"
 
 #pragma once
 
 // Modules
-int luaopen_lovr(lua_State* L);
-int luaopen_lovr_audio(lua_State* L);
-int luaopen_lovr_data(lua_State* L);
-int luaopen_lovr_event(lua_State* L);
-int luaopen_lovr_filesystem(lua_State* L);
-int luaopen_lovr_graphics(lua_State* L);
-int luaopen_lovr_headset(lua_State* L);
-int luaopen_lovr_math(lua_State* L);
-int luaopen_lovr_physics(lua_State* L);
-int luaopen_lovr_thread(lua_State* L);
-int luaopen_lovr_timer(lua_State* L);
+LOVR_EXPORT int luaopen_lovr(lua_State* L);
+LOVR_EXPORT int luaopen_lovr_audio(lua_State* L);
+LOVR_EXPORT int luaopen_lovr_data(lua_State* L);
+LOVR_EXPORT int luaopen_lovr_event(lua_State* L);
+LOVR_EXPORT int luaopen_lovr_filesystem(lua_State* L);
+LOVR_EXPORT int luaopen_lovr_graphics(lua_State* L);
+LOVR_EXPORT int luaopen_lovr_headset(lua_State* L);
+LOVR_EXPORT int luaopen_lovr_math(lua_State* L);
+LOVR_EXPORT int luaopen_lovr_physics(lua_State* L);
+LOVR_EXPORT int luaopen_lovr_thread(lua_State* L);
+LOVR_EXPORT int luaopen_lovr_timer(lua_State* L);
 extern const luaL_Reg lovrModules[];
 
 // Objects
@@ -65,14 +66,15 @@ extern const char* BlockTypes[];
 extern const char* BufferUsages[];
 extern const char* CompareModes[];
 extern const char* CoordinateSpaces[];
+extern const char* Devices[];
+extern const char* DeviceAxes[];
+extern const char* DeviceButtons[];
 extern const char* DrawModes[];
 extern const char* DrawStyles[];
 extern const char* EventTypes[];
 extern const char* FilterModes[];
 extern const char* HeadsetDrivers[];
-extern const char* HeadsetEyes[];
 extern const char* HeadsetOrigins[];
-extern const char* HeadsetTypes[];
 extern const char* HorizontalAligns[];
 extern const char* JointTypes[];
 extern const char* MaterialColors[];
@@ -127,7 +129,7 @@ void* _luax_totype(lua_State* L, int index, uint32_t hash);
 void* _luax_checktype(lua_State* L, int index, uint32_t hash, const char* debug);
 void _luax_pushtype(lua_State* L, const char* name, uint32_t hash, void* object);
 void luax_registerloader(lua_State* L, lua_CFunction loader, int index);
-void luax_vthrow(lua_State* L, const char* format, va_list args);
+void luax_vthrow(void* L, const char* format, va_list args);
 void luax_traceback(lua_State* L, lua_State* T, const char* message, int level);
 int luax_getstack(lua_State* L);
 void luax_pushconf(lua_State* L);

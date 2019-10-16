@@ -12,14 +12,14 @@
 #pragma once
 
 #define GPU_BUFFER_FIELDS \
-  uint32_t id; \
-  uint8_t incoherent;
+  uint8_t incoherent; \
+  uint32_t id;
 
 #define GPU_CANVAS_FIELDS \
+  bool immortal; \
   uint32_t framebuffer; \
   uint32_t resolveBuffer; \
-  uint32_t depthBuffer; \
-  bool immortal;
+  uint32_t depthBuffer;
 
 #define GPU_MESH_FIELDS \
   uint32_t vao; \
@@ -29,7 +29,7 @@
   uint32_t program;
 
 #define GPU_TEXTURE_FIELDS \
+  uint8_t incoherent; \
   GLuint id; \
   GLuint msaaId; \
-  GLenum target; \
-  uint8_t incoherent;
+  GLenum target;

@@ -13,7 +13,6 @@
 #include "filesystem/filesystem.h"
 #include "core/arr.h"
 #include "core/ref.h"
-#include "util.h"
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -344,6 +343,10 @@ static int l_lovrGraphicsCreateWindow(lua_State* L) {
   flags.fullscreen = lua_toboolean(L, -1);
   lua_pop(L, 1);
 
+  lua_getfield(L, 1, "resizable");
+  flags.resizable = lua_toboolean(L, -1);
+  lua_pop(L, 1);
+
   lua_getfield(L, 1, "msaa");
   flags.msaa = lua_tointeger(L, -1);
   lua_pop(L, 1);
@@ -409,8 +412,8 @@ static int l_lovrGraphicsTick(lua_State* L) {
 static int l_lovrGraphicsTock(lua_State* L) {
   lovrGraphicsFlush();
   const char* label = luaL_checkstring(L, 1);
-  lovrGraphicsTock(label);
-  return 0;
+  lua_pushnumber(L, lovrGraphicsTock(label));
+  return 1;
 }
 
 static int l_lovrGraphicsGetFeatures(lua_State* L) {
@@ -461,13 +464,6 @@ static int l_lovrGraphicsGetStats(lua_State* L) {
   lua_setfield(L, 1, "drawcalls");
   lua_pushinteger(L, stats->shaderSwitches);
   lua_setfield(L, 1, "shaderswitches");
-  lua_createtable(L, 0, (int) stats->timers.length);
-  for (size_t i = 0; i < stats->timers.length; i++) {
-    lua_pushstring(L, stats->timers.data[i].label);
-    lua_pushnumber(L, stats->timers.data[i].time);
-    lua_settable(L, -3);
-  }
-  lua_setfield(L, 1, "timers");
   return 1;
 }
 
@@ -1482,7 +1478,7 @@ static int l_lovrGraphicsNewShader(lua_State* L) {
       luax_parseshaderflags(L, -1, flags, &flagCount);
       lua_pop(L, 1);
 
-      lua_getfield(L, 2, "stereo");
+      lua_getfield(L, 3, "stereo");
       multiview = lua_isnil(L, -1) ? multiview : lua_toboolean(L, -1);
       lua_pop(L, 1);
     }
@@ -1693,7 +1689,7 @@ static const luaL_Reg lovrGraphics[] = {
   { NULL, NULL }
 };
 
-LOVR_EXPORT int luaopen_lovr_graphics(lua_State* L) {
+int luaopen_lovr_graphics(lua_State* L) {
   lua_newtable(L);
   luaL_register(L, NULL, lovrGraphics);
   luax_registertype(L, Canvas);
