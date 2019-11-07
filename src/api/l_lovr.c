@@ -3,9 +3,7 @@
 #include "platform.h"
 #include "lib/lua-cjson/lua_cjson.h"
 #include "lib/lua-enet/enet.h"
-
-int luaopen_ext_midi(lua_State* L);
-int luaopen_ext_midi_seq(lua_State* L);
+#include "midi/hook-midi.h"
 
 const luaL_Reg lovrModules[] = {
   { "lovr", luaopen_lovr },

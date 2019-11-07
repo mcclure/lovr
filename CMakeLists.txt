@@ -2,6 +2,13 @@ cmake_minimum_required(VERSION 3.1.0)
 cmake_policy(SET CMP0063 NEW)
 project(lovr)
 
+# This fork of LOVR contains some C++. Make sure we get C++11
+set (CMAKE_CXX_STANDARD 11)
+set (CMAKE_CXX_EXTENSIONS OFF)
+if (APPLE)
+  set (CMAKE_CPP_FLAGS ${CMAKE_CPP_FLAGS} -Werror=c99-extensions) # Prevent noncompliant c++ in mac build
+endif()
+
 # Options
 option(LOVR_ENABLE_AUDIO "Enable the audio module" ON)
 option(LOVR_ENABLE_DATA "Enable the data module" ON)
@@ -587,6 +594,7 @@ if (LOVR_ENABLE_MIDI)
   endif()
   target_link_libraries(lovr ${LOVR_RTMIDI})
   target_sources(lovr PRIVATE game/midi/hook-midi.cpp)
+  include_directories(game/include)
   add_definitions(-DLOVR_ENABLE_MIDI)
 endif()
 

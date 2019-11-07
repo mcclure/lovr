@@ -3,11 +3,14 @@
 #include "RtMidi.h"
 #include "platform.h"
 
+extern "C" {
+#include "api/api.h"
+#include "core/util.h"
+}
+
 static RtMidiOut midiProbeOut;
 static RtMidiIn midiProbeIn;
 using namespace std;
-
-#define lovrLog printf // FIXME
 
 // MIDI util
 
@@ -101,11 +104,6 @@ static bool correctMap() {
 }
 
 // Lua util
-
-extern "C" {
-#include "api/api.h"
-#include "core/util.h"
-}
 
 static void setTableStack(lua_State *L, int idx, double number) {
   lua_pushnumber(L, number);
@@ -696,7 +694,7 @@ void InterpState::next(Interp &interp) {
 // hook-seq.cpp
 
 #include <map>
-#include "skategirl/util.h"
+#include "shared/idmap.h"
 #include "lib/tinycthread/tinycthread.h"
 
 struct ThreadOwner {
