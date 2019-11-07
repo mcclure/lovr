@@ -28,3 +28,12 @@
 [submodule "deps/openxr"]
 	path = deps/openxr
 	url = https://github.com/khronosgroup/openxr-sdk
+[submodule "deps/portaudio"]
+	path = deps/portaudio
+	url = git://git.assembla.com/portaudio.git
+[submodule "deps/portaudio_opensles"]
+	path = deps/portaudio_opensles
+	url = https://github.com/Gundersanne/portaudio_opensles.git
+[submodule "deps/rtmidi"]
+	path = deps/rtmidi
+	url = https://github.com/thestk/rtmidi.git

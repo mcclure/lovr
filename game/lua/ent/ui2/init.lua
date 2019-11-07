@@ -13,6 +13,11 @@ local function fontHeight()
 	return flat.font:getHeight()*flat.fontscale
 end
 
+ui2.textmargin = 0.05 -- Margin around text. Tunable 
+ui2.screenmargin = (fontHeight() + ui2.textmargin*2)/2 -- Space between edge of screen and buttons. Tunable
+
+local margin = ui2.textmargin
+
 -- Return a point anchored to a bound
 -- bound: a bound2
 -- anchor: combination of (l)eft, (r)ight, (t)op, (b)ottom, x (c)enter, y (m)iddle
@@ -101,8 +106,6 @@ function ui2.PileLayout:_init(spec)
 	self.anchor = "lb" .. (self.anchor or "")
 end
 
-local margin = 0.05 -- Margin around text. Tunable 
-
 -- Perform all layout at once. If true, re-lay-out things already laid out
 function ui2.PileLayout:layout(relayout)
 	-- Constants: Logic
@@ -112,7 +115,7 @@ function ui2.PileLayout:layout(relayout)
 
 	-- Constants: Metrics
 	local fh = fontHeight() -- Raw height of font
-	local screenmargin = (fh + margin*2)/2 -- Space between edge of screen and buttons. Tunable
+	local screenmargin = ui2.screenmargin -- Space between edge of screen and buttons. Tunable
 	local spacing = margin
 
 	-- Logic constants

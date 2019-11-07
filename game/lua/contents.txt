@@ -1,3 +1,8 @@
+midi
+	midi project materials only
+
+------ lovr-ent
+
 app
 	Toplevel ents (Can be addressed at command line)
 

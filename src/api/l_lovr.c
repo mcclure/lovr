@@ -4,6 +4,9 @@
 #include "lib/lua-cjson/lua_cjson.h"
 #include "lib/lua-enet/enet.h"
 
+int luaopen_ext_midi(lua_State* L);
+int luaopen_ext_midi_seq(lua_State* L);
+
 const luaL_Reg lovrModules[] = {
   { "lovr", luaopen_lovr },
 #ifdef LOVR_ENABLE_AUDIO
@@ -41,6 +44,10 @@ const luaL_Reg lovrModules[] = {
 #endif
 #ifdef LOVR_ENABLE_ENET
   { "enet", luaopen_enet },
+#endif
+#ifdef LOVR_ENABLE_MIDI
+  { "ext.midi", luaopen_ext_midi },
+  { "ext.midi.seq", luaopen_ext_midi_seq },
 #endif
   { NULL, NULL }
 };

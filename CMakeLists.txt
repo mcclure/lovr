@@ -14,6 +14,8 @@ option(LOVR_ENABLE_PHYSICS "Enable the physics module" ON)
 option(LOVR_ENABLE_THREAD "Enable the thread module" ON)
 option(LOVR_ENABLE_TIMER "Enable the timer module" ON)
 
+option(LOVR_ENABLE_MIDI "Enable MIDI addon module" ON)
+
 option(LOVR_ENABLE_ENET "Bundle with lua-enet" ON)
 option(LOVR_ENABLE_JSON "Bundle with lua-cjson" ON)
 
@@ -33,6 +35,7 @@ option(LOVR_SYSTEM_GLFW "Use the system-provided glfw" OFF)
 option(LOVR_SYSTEM_LUA "Use the system-provided Lua" OFF)
 option(LOVR_SYSTEM_ODE "Use the system-provided ODE" OFF)
 option(LOVR_SYSTEM_OPENAL "Use the system-provided OpenAL" OFF)
+option(LOVR_SYSTEM_RTMIDI "Use the system-provided RtMidi" OFF)
 
 option(LOVR_BUILD_SHARED "Build as a shared library instead of an executable" OFF)
 option(LOVR_BUILD_BUNDLE "On macOS, build a .app instead of an executable" OFF)
@@ -211,6 +214,21 @@ if(LOVR_ENABLE_PHYSICS)
   endif()
 endif()
 
+# PortAudio
+if (USE_PORTAUDIO)
+  if(ANDROID)
+    add_subdirectory(deps/portaudio_opensles portaudio)
+    include_directories(deps/portaudio_opensles/include)
+    set(LOVR_PORTAUDIO portaudio_static)
+    add_definitions(-DUSE_PORTAUDIO)
+  else()
+    add_subdirectory(deps/portaudio portaudio)
+    include_directories(deps/portaudio/include)
+    set(LOVR_PORTAUDIO portaudio_static)
+    add_definitions(-DUSE_PORTAUDIO)
+  endif()
+endif()
+
 # OpenAL
 if(LOVR_ENABLE_AUDIO)
   if(LOVR_SYSTEM_OPENAL)
@@ -350,6 +368,7 @@ target_link_libraries(lovr
   ${LOVR_MSDF}
   ${LOVR_ODE}
   ${LOVR_OPENAL}
+  ${LOVR_PORTAUDIO}
   ${LOVR_OPENGL}
   ${LOVR_OPENVR}
   ${LOVR_OPENXR}
@@ -543,6 +562,32 @@ if(LOVR_ENABLE_JSON)
     src/lib/lua-cjson/lua_cjson.c
     src/lib/lua-cjson/strbuf.c
   )
+endif()
+
+# RtMIDI. Have to put this late because target_include_directories gets used
+if (LOVR_ENABLE_MIDI)
+  if(LOVR_SYSTEM_RTMIDI)
+    # This is a copypaste of ODE. Is this how you do it??
+    pkg_search_module(RTMIDI REQUIRED rtmidi)
+    target_include_directories(lovr PRIVATE ${RTMIDI_INCLUDE_DIRS})
+    set(LOVR_RTMIDI rtmidi)
+  else()
+    set(RTMIDI_BUILD_SHARED_LIBS OFF) # Polluting cmake variable space..?
+    set(RTMIDI_BUILD_STATIC_LIBS ON)
+    set(RTMIDI_BUILD_TESTING OFF)
+    add_subdirectory(deps/rtmidi_build rtmidi)
+
+    # RtMidi.h is at the toplevel of deps/rtmidi, and putting that in include_directories would pollute the namespace
+    # Copy RtMidi to a build directory to work around this.
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/rtmidi_include)
+    configure_file (deps/rtmidi/RtMidi.h rtmidi_include/RtMidi.h COPYONLY)
+    target_include_directories(lovr PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/rtmidi_include")
+
+    set(LOVR_RTMIDI rtmidi_static)
+  endif()
+  target_link_libraries(lovr ${LOVR_RTMIDI})
+  target_sources(lovr PRIVATE game/midi/hook-midi.cpp)
+  add_definitions(-DLOVR_ENABLE_MIDI)
 endif()
 
 # Platforms

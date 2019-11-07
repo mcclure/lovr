@@ -1,10 +1,10 @@
-(cd build && cmake -DCMAKE_BUILD_TYPE=Release ..)
+(cd build && cmake -DLOVR_ENABLE_AUDIO=NO -DUSE_PORTAUDIO=YES -DCMAKE_BUILD_TYPE=Release ..)
 (cd build && cmake --build . --config Release)
-./build/lovr game/lua
+./build/lovr game/lua midi/scatter
 
-(cd build && cmake -DCMAKE_BUILD_TYPE=Debug ..)
+(cd build && cmake -DLOVR_ENABLE_AUDIO=NO -DUSE_PORTAUDIO=YES -DCMAKE_BUILD_TYPE=Debug ..)
 (cd build && cmake --build . --config Debug)
 
 -Add -A x64 to configure on windows, like
-(cd build && cmake.exe -DCMAKE_BUILD_TYPE=Debug -A x64 -DLOVR_USE_OCULUS=1 -DLOVR_OCULUS_PATH=C:/Users/Andi/Downloads/ovr_sdk_win_1.26.0_public/OculusSDK ..)
+(cd build && cmake.exe -DLOVR_ENABLE_AUDIO=NO -DUSE_PORTAUDIO=YES -DCMAKE_BUILD_TYPE=Debug -A x64 -DLOVR_USE_OCULUS=1 -DLOVR_OCULUS_PATH=C:/Users/Andi/Downloads/ovr_sdk_win_1.26.0_public/OculusSDK ..)
 

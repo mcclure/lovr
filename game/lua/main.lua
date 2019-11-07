@@ -12,6 +12,7 @@ do
 
 	require "engine.types"
 	require "engine.ent"
+	space.ent.strictInsert = true -- Do not allow insert() to default to ent.root
 	require "engine.common_ent"
 	require "engine.lovr"
 	require "engine.mode"
@@ -22,13 +23,10 @@ do
 	end
 end
 
---[[
--- Suggest you create a namespace for your game here, like:
-namespace.prepare("gamename", "standard", function(space)
-	require "engine.gamename.types"
-	require "engine.gamename.level"
+namespace.prepare("midi", "standard", function(space)
+	space.midi = require "ext.midi"
+	require "midi.types"
 end)
---]]
 
 -- Ent driver
 -- Pass an app load point or a list of them as cmdline args or defaultApp will run
