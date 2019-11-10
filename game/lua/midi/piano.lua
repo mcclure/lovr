@@ -48,18 +48,6 @@ local function ipairsReverse(t)
 	return ipairsReverseIter, t, #t+1
 end
 
-local function charIter(s, i) -- (Helper for ichars)
-	i = i + 1
-	if i <= #s then
-		return i, s:sub(i, i)
-	end
-end
-
-function ichars(s) -- ipairs() but for characters of an array
-	return charIter, s, 0
-end
-
-
 local function addLines(t)
 	local b = t.bound
 	local lines = {}
@@ -136,11 +124,16 @@ function PianoHud:onMirror()
 	end
 end
 
+function PianoHud:toMidiNote(semitone)
+	return 60+semitone
+end
+
 function PianoHud:onPress(at)
 	for i,v in ipairsReverse(self.keys) do
 		if v.bound:contains(at) then
 			v.down = true
 			self.keyClicked = i
+			midi.note(self:device(), true, self:toMidiNote(v.note))
 			break
 		end
 	end
@@ -148,7 +141,10 @@ end
 
 function PianoHud:onRelease()
 	if self.keyClicked then
-		self.keys[self.keyClicked].down = false
+		local v = self.keys[self.keyClicked]
+		midi.note(self:device(), false, self:toMidiNote(v.note))
+		v.down = false
+		self.keyClicked = nil
 	end
 end
 
