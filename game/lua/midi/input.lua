@@ -1,4 +1,4 @@
--- Input monitor
+-- Input monitor-- prints all device input to stdout
 
 namespace "midi"
 

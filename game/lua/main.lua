@@ -25,7 +25,7 @@ end
 
 namespace.prepare("midi", "standard", function(space)
 	space.midi = require "ext.midi"
-	require "midi.types"
+	require "midi.support.types"
 end)
 
 -- Ent driver

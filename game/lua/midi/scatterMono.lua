@@ -1,4 +1,6 @@
--- Play random notes
+-- Play random notes, monophonic
+
+-- TODO: Add a device selector
 
 namespace "midi"
 
@@ -10,8 +12,8 @@ local ScatterMidi = classNamed("ScatterMidi", ui2.ScreenEnt)
 function ScatterMidi:findDevice()
 	self.device = nil
 	for i,v in ipairs(self.devices) do
-		if not stringx.startswith(v.name, "IAC Driver Bus")
-	   and not stringx.endswith(v.name, " In") then
+		if --not stringx.startswith(v.name, "IAC Driver Bus") and
+	    not stringx.endswith(v.name, " In") then
 			self.device = i
 		end
 	end

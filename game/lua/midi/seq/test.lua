@@ -1,10 +1,10 @@
--- Input monitor
+-- Test ext.midi.seq sequence language
 
 namespace "midi"
 
 local flat = require "engine.flat"
 local ui2 = require "ent.ui2"
-local selector = require "midi.ent.selector"
+local selector = require "midi.support.ent.selector"
 local midiSeq = require "ext.midi.seq"
 
 local TestSeq = classNamed("TestSeq", ui2.ScreenEnt)

@@ -1,4 +1,4 @@
--- Print devices
+-- DEBUG: Dump MIDI devices to STDOUT at startup, then continuously print internal state for RtMidi and ext.midi to screen
 
 namespace "midi"
 

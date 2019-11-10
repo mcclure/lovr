@@ -1,5 +1,7 @@
 -- Play random notes
 
+-- TODO: Add a device selector
+
 namespace "midi"
 
 local flat = require "engine.flat"

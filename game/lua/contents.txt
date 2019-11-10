@@ -1,5 +1,13 @@
 midi
-	midi project materials only
+	MIDI project materials
+	Note: All .lua files toplevel in midi/, midi/debug or midi/seq/ are apps that can be invoked from the command line
+	See first-line comments on each lua file for explanations
+midi/debug
+	MIDI apps that test the lovr MIDI library itself, not useful for an end user
+midi/seq
+	MIDI project materials based on ext.midi.seq / my sequencer language
+midi/support
+	All .lua files meant to be "require"d are quarantined in here
 
 ------ lovr-ent
 

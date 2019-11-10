@@ -1,11 +1,11 @@
--- Input monitor
+-- Input monitor-- prints one device input to on-screen console
 
 namespace "midi"
 
 local flat = require "engine.flat"
 local ui2 = require "ent.ui2"
-local midiEnt = require "midi.ent"
-local selector = require "midi.ent.selector"
+local midiEnt = require "midi.support.ent"
+local selector = require "midi.support.ent.selector"
 
 local TestMidi = classNamed("TestMidi", ui2.ScreenEnt)
 

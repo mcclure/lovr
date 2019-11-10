@@ -1,11 +1,11 @@
--- Input monitor
+-- Input monitor-- prints "current state" of one device (ie which notes are down) to screen
 
 namespace "midi"
 
 local flat = require "engine.flat"
 local ui2 = require "ent.ui2"
-local midiEnt = require "midi.ent"
-local selector = require "midi.ent.selector"
+local midiEnt = require "midi.support.ent"
+local selector = require "midi.support.ent.selector"
 
 local midiOn = 0x90 -- 144
 local midiOff = 0x80 -- 128

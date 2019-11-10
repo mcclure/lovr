@@ -1,10 +1,10 @@
--- Piano interface
+-- Piano interface. Click to play a note
 
 namespace "midi"
 
 local flat = require "engine.flat"
 local ui2 = require "ent.ui2"
-local selector = require "midi.ent.selector"
+local selector = require "midi.support.ent.selector"
 
 local PianoHud = classNamed("PianoHud", ui2.ScreenEnt)
 
@@ -121,7 +121,6 @@ function PianoHud:onMirror()
 	ui2.ScreenEnt.onMirror(self)
 	
 	for _,v in ipairs(self.keys) do
-		--print("!", v, v.down)
 		if v.down then
 			lovr.graphics.setColor(0.5,0.5,0.5)
 		elseif v.black then
@@ -139,11 +138,9 @@ end
 
 function PianoHud:onPress(at)
 	for i,v in ipairsReverse(self.keys) do
-		--print("...", i, v, v.bound, at, v.bound:contains(at))
 		if v.bound:contains(at) then
 			v.down = true
 			self.keyClicked = i
-			--print("X", self.keyClicked)
 			break
 		end
 	end

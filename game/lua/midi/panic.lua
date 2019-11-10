@@ -1,4 +1,4 @@
--- Panic and quit
+-- Send "MIDI panic" (all notes off) to every device, then quit. Known buggy.
 
 namespace "midi"
 

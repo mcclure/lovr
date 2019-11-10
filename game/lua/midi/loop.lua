@@ -1,10 +1,10 @@
--- Input monitor
+-- "Looper"-- records notes and plays them back in a loop. Needs work.
 
 namespace "midi"
 
 local flat = require "engine.flat"
 local ui2 = require "ent.ui2"
-local selector = require "midi.ent.selector"
+local selector = require "midi.support.ent.selector"
 
 local TestMidi = classNamed("TestMidi", ui2.ScreenEnt)
 
