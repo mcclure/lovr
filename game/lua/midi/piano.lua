@@ -37,6 +37,29 @@ local function corner(b, x)
 	end
 end
 
+local function ipairsReverseIter(t, i)
+	i = i - 1
+	if i > 0 then
+		return i, t[i]
+	end
+end
+
+local function ipairsReverse(t)
+	return ipairsReverseIter, t, #t+1
+end
+
+local function charIter(s, i) -- (Helper for ichars)
+	i = i + 1
+	if i <= #s then
+		return i, s:sub(i, i)
+	end
+end
+
+function ichars(s) -- ipairs() but for characters of an array
+	return charIter, s, 0
+end
+
+
 local function addLines(t)
 	local b = t.bound
 	local lines = {}
@@ -98,8 +121,11 @@ function PianoHud:onMirror()
 	ui2.ScreenEnt.onMirror(self)
 	
 	for _,v in ipairs(self.keys) do
-		if v.black then
-			lovr.graphics.setColor(0,0,0)
+		--print("!", v, v.down)
+		if v.down then
+			lovr.graphics.setColor(0.5,0.5,0.5)
+		elseif v.black then
+			lovr.graphics.setColor(0,0,0)	
 		else
 			lovr.graphics.setColor(0.1,0.1,0.1)
 		end
@@ -108,6 +134,24 @@ function PianoHud:onMirror()
 		for _2,l in ipairs(v.lineCalls) do
 			lovr.graphics.plane('fill', unpack(l))
 		end
+	end
+end
+
+function PianoHud:onPress(at)
+	for i,v in ipairsReverse(self.keys) do
+		--print("...", i, v, v.bound, at, v.bound:contains(at))
+		if v.bound:contains(at) then
+			v.down = true
+			self.keyClicked = i
+			--print("X", self.keyClicked)
+			break
+		end
+	end
+end
+
+function PianoHud:onRelease()
+	if self.keyClicked then
+		self.keys[self.keyClicked].down = false
 	end
 end
 
