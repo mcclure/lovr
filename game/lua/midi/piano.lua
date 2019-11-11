@@ -37,17 +37,6 @@ local function corner(b, x)
 	end
 end
 
-local function ipairsReverseIter(t, i)
-	i = i - 1
-	if i > 0 then
-		return i, t[i]
-	end
-end
-
-local function ipairsReverse(t)
-	return ipairsReverseIter, t, #t+1
-end
-
 local function addLines(t)
 	local b = t.bound
 	local lines = {}

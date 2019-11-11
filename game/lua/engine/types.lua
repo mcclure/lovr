@@ -51,6 +51,17 @@ function toboolean(v) -- As named
 	return v and true or false
 end
 
+local function ipairsReverseIter(t, i) -- (Helper for ipairsReverse)
+	i = i - 1
+	if i > 0 then
+		return i, t[i]
+	end
+end
+
+local function ipairsReverse(t) -- ipairs() but in reverse order
+	return ipairsReverseIter, t, #t+1
+end
+
 local function charIter(s, i) -- (Helper for ichars)
 	i = i + 1
 	if i <= #s then
