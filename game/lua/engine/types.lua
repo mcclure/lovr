@@ -58,7 +58,7 @@ local function ipairsReverseIter(t, i) -- (Helper for ipairsReverse)
 	end
 end
 
-local function ipairsReverse(t) -- ipairs() but in reverse order
+function ipairsReverse(t) -- ipairs() but in reverse order
 	return ipairsReverseIter, t, #t+1
 end
 
