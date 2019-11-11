@@ -47,11 +47,8 @@ function TestSeq:onLoad()
 	}
 
 	local layout
-	layout = ui2.PileLayout{managed=ents, parent=self, pass={relayout=function()
-		for _,v in ipairs(ents) do if not v.label then return end end
-		layout:layout(true)
-	end}}
-	layout:prelayout()
+	layout = ui2.PileLayout{managed=ents, parent=self, mutable=true}
+	layout:layout()
 end
 
 function TestSeq:onUpdate()

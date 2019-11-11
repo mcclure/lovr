@@ -79,6 +79,11 @@ function ui2.Layout:add(e) -- Call to manage another item
 end
 
 function ui2.Layout:manage(e) -- For internal use
+	if self.mutable and not self.pass then self.pass = {} end
+	if self.mutable and not self.pass.relayout then
+		self.relayoutTemplate = function() self:layout(true) end
+		self.pass.relayout = self.relayoutTemplate
+	end
 	if self.pass and e.layoutPass then e:layoutPass(self.pass) end
 	if self.parent then e:insert(self.parent) end
 end
@@ -126,8 +131,16 @@ function ui2.PileLayout:layout(relayout)
 	local xface = self.face == "x"
 	local axis = vec2(moveright and 1 or -1, moveup and 1 or -1) -- Only thing anchor impacts
 
+	if self.mutable then
+		for _,v in ipairs(self.managed) do if not v.label then
+			self:prelayout()
+			return
+		end end
+	end
+
 	-- State
 	local okoverflow = toboolean(self.cursor) -- Overflows should be ignored
+	if relayout then self.cursor = nil end
 	self.cursor = self.cursor or vec2(leftedge, bottomedge) -- Placement cursor (start at bottom left)
 
 	for i = startAt,mn do -- Lay out everything not laid out
