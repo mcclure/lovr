@@ -188,8 +188,11 @@ end
 function Loc:applyToVector(v)
     return self.rotate * (v * self.scale)
 end
-function Loc:compose(v)
+function Loc:compose(v) -- Return Loc equivalent to "apply self, then v"
     return Loc(self:apply(v.at), v.rotate * self.rotate, self.scale * v.scale)
+end
+function Loc:precompose(v) -- Return Loc equivalent to "apply v, then self"
+	return v:compose(self)
 end
 function Loc:inverse(v)
 	local unrotate = self.rotate:inverse()

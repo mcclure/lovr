@@ -20,6 +20,7 @@ do
 	for _,v in ipairs{"bound2", "bound3", "vec2", "vec3", "quat", "mat4", "color", "utils"} do
 		space[v] = space.cpml[v]
 	end
+	space.ugly = require "engine.ugly"
 end
 
 --[[
