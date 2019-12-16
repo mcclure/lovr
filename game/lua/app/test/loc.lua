@@ -10,6 +10,59 @@ local axisRad = 3
 local tripletOffset = 7
 local animateLen = 1
 
+-- Before setting up GUI, run a tiny unit test of Loc
+local function consistencyTest()
+	local function isClose(a,b)
+		local c = a - b
+		return c:len2() < 1/4096
+	end
+
+	local points = {
+		vec3(0,0,0), vec3(1,0,0), vec3(0,1,0), vec3(0,0,1), vec3(1,1,1), vec3(-1,2,5), vec3(10,-10,-5)
+	}
+	local transforms = {
+		Loc(nil, quat.from_angle_axis( 2*math.pi/3, 1,0,0 ), nil),
+		Loc(vec3(-10, 1, 5), quat.from_angle_axis( math.pi/5, 0,1,0 )),
+		Loc(nil, quat.from_angle_axis( 4*math.pi/3, 0,1,0 ), nil),
+		Loc(vec3(4, 2, 1), quat.from_angle_axis( 2*math.pi, 0,1,1 ), 5),
+		Loc(vec3(10, -1, -5), quat.from_angle_axis( -math.pi/5, 0,1,0 )),
+		Loc(vec3(4, 2, 1)),
+	}
+
+	for i,point in ipairs(points) do
+		local test1 = point
+
+		for i2, transform in ipairs(transforms) do
+			local pre = test1
+
+			test1 = transform:apply(test1)
+			test1 = transform:inverse():apply(test1)
+
+			if not isClose(pre, test1) then
+				error(string.format("point %d, transform %d failed inverse test", i, i2))
+			end
+		end
+	end
+
+	for i,point in ipairs(points) do
+		local test1 = point
+		local testTransform = Loc()
+
+		for i2, transform in ipairs(transforms) do
+			test1 = transform:apply(test1)
+
+			testTransform = testTransform:compose(transform)
+			local test2 = testTransform:apply(point)
+
+			if not isClose(test1, test2) then
+				error(string.format("point %d, transform %d failed compose test", i, i2))
+			end
+		end
+	end
+	print("Consistency test passed")
+end
+consistencyTest()
+
 -- lovr.graphics.push a matrix with the coordinates from a Loc transform.
 local function locTransform(t)
 	if not t then return end

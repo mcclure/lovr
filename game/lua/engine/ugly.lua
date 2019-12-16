@@ -1,6 +1,8 @@
 -- Reimplementation of some pl.pretty functions with a stack depth limit (default 1).
 -- NOTE: THIS FILE SUBSTANTIALLY REUSES PENLIGHT CODE AND IS UNDER THE PENLIGHT LICENSE, NOT THE LOVR-ENT LICENSE
 
+namespace "minimal"
+
 local ugly = {}
 
 local append = table.insert

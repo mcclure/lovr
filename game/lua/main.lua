@@ -1,17 +1,33 @@
 
 namespace = require "engine.namespace"
 
+local singleThread = true -- Set to true to force everything to a single thread
+
 -- Load namespace basics
 do
-	local space = namespace.space("standard")
+	-- This should be only used in helper threads. Make sure this matches thread/helper/boot.lua
+	local space = namespace.space("minimal")
 
 	-- PL classes missing? add here:
 	for _,v in ipairs{"class", "pretty", "stringx", "tablex"} do
 		space[v] = require("pl." .. v)
 	end
+	space.ugly = require "engine.ugly"
 
 	require "engine.types"
+end
+do
+	-- This is the basic namespace most files should use
+	local space = namespace.space("standard", "minimal")
+
+	space.cpml = require "cpml"
+	for _,v in ipairs{"bound2", "bound3", "vec2", "vec3", "quat", "mat4", "color", "utils"} do
+		space[v] = space.cpml[v]
+	end
+	require "engine.loc"
+
 	require "engine.ent"
+	space.ent.singleThread = singleThread
 	require "engine.common_ent"
 	require "engine.lovr"
 	require "engine.mode"
@@ -20,7 +36,6 @@ do
 	for _,v in ipairs{"bound2", "bound3", "vec2", "vec3", "quat", "mat4", "color", "utils"} do
 		space[v] = space.cpml[v]
 	end
-	space.ugly = require "engine.ugly"
 end
 
 --[[
@@ -58,4 +73,14 @@ local mirror = lovr.mirror
 function lovr.mirror()
 	mirror()
 	ent.root:route("onMirror")
+end
+
+if not singlethread then -- Kludge: Currently only threading uses onQuit. Instead make it onThreadCleanup or something
+	function lovr.quit()
+		ent.root:route("onQuit")
+	end
+
+	function lovr.threaderror(thread, message)
+		error(string.format("Error on thread:\n%s", (message or "[nil]")))
+	end
 end

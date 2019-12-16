@@ -20,4 +20,12 @@ basic.screenVertex = [[
 	}
 ]]
 
+basic.skyboxVertex = [[
+	out vec3 texturePosition[2];
+	vec4 position(mat4 projection, mat4 transform, vec4 vertex) {
+	  texturePosition[lovrViewID] = inverse(mat3(transform)) * (inverse(projection) * vertex).xyz;
+	  return vertex;
+	}
+]]
+
 return basic
