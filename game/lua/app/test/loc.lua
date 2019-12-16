@@ -73,7 +73,7 @@ end
 
 -- Take Loc transform "transform" to a power, but recenter first.
 function LocTest:centeredTransform(transform, recenterVector)
-	return Loc(recenterVector):compose(transform):compose(Loc(-recenterVector))
+	return Loc(-recenterVector):compose(transform):compose(Loc(recenterVector))
 end
 
 function LocTest:drawAxis()
