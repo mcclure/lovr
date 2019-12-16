@@ -25,17 +25,16 @@ option(LOVR_USE_OCULUS "Enable the LibOVR backend for the headset module (be sur
 option(LOVR_USE_OCULUS_MOBILE "Enable the Oculus Mobile (Android) backend for the headset module" OFF)
 option(LOVR_USE_DESKTOP_HEADSET "Enable the keyboard/mouse backend for the headset module" ON)
 option(LOVR_USE_LEAP "Enable the Leap Motion backend for the headset module" OFF)
-option(LOVR_USE_SSE "Enable use of SIMD intrinsics" ON)
 
-option(LOVR_SYSTEM_PHYSFS "Use the system-provided PhysFS" OFF)
 option(LOVR_SYSTEM_ENET "Use the system-provided enet" OFF)
 option(LOVR_SYSTEM_GLFW "Use the system-provided glfw" OFF)
 option(LOVR_SYSTEM_LUA "Use the system-provided Lua" OFF)
 option(LOVR_SYSTEM_ODE "Use the system-provided ODE" OFF)
 option(LOVR_SYSTEM_OPENAL "Use the system-provided OpenAL" OFF)
 
-option(LOVR_BUILD_SHARED "Build as a shared library instead of an executable" OFF)
-option(LOVR_BUILD_BUNDLE "On macOS, build a .app instead of an executable" OFF)
+option(LOVR_BUILD_EXE "Build an executable" ON)
+option(LOVR_BUILD_SHARED "Build a shared library (takes precedence over LOVR_BUILD_EXE)" OFF)
+option(LOVR_BUILD_BUNDLE "On macOS, build a .app bundle instead of a raw program" OFF)
 
 # Setup
 if(EMSCRIPTEN)
@@ -44,12 +43,9 @@ if(EMSCRIPTEN)
     "-s USE_GLFW=3 "
     "-s USE_WEBGL2=1 "
     "-s GL_PREINITIALIZED_CONTEXT=1 "
-    "-s USE_ZLIB=1 "
-    "-s USE_PTHREADS=0 "
     "-s FULL_ES2=1 "
     "-s FULL_ES3=1 "
     "-s FORCE_FILESYSTEM=1 "
-    "-s ALLOW_MEMORY_GROWTH=1 "
     "-s \"EXPORTED_FUNCTIONS=[ "
       "'_main','_lovrDestroy',"
       "'_webvr_onAnimationFrame',"
@@ -60,13 +56,15 @@ if(EMSCRIPTEN)
     "--js-library \"${CMAKE_CURRENT_SOURCE_DIR}/src/resources/webvr.js\" "
     "--shell-file \"${CMAKE_CURRENT_SOURCE_DIR}/src/resources/lovr.html\""
   )
+  if(LOVR_ENABLE_THREAD)
+    set(LOVR_EMSCRIPTEN_FLAGS "${LOVR_EMSCRIPTEN_FLAGS} -s USE_PTHREADS=1")
+  endif()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${LOVR_EMSCRIPTEN_FLAGS}")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${LOVR_EMSCRIPTEN_FLAGS}")
   set(CMAKE_EXECUTABLE_SUFFIX ".html")
   set(LOVR_USE_WEBVR ON)
   set(LOVR_USE_OPENVR OFF)
   set(LOVR_USE_OCULUS OFF)
-  set(LOVR_ENABLE_THREAD OFF)
 elseif(ANDROID)
   set(LOVR_USE_OPENVR OFF)
   set(LOVR_USE_OCULUS OFF)
@@ -75,34 +73,8 @@ elseif(ANDROID)
   set(LOVR_BUILD_SHARED ON) # Android has only "activities"
 elseif(UNIX)
   find_package(PkgConfig)
-endif()
-
-if(EMSCRIPTEN OR ${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm" OR ${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
-  set(LOVR_USE_SSE OFF)
-endif()
-
-# PhysicsFS
-if(LOVR_ENABLE_FILESYSTEM)
-  if(LOVR_SYSTEM_PHYSFS)
-    find_package(PhysFS REQUIRED)
-    include_directories(${PHYSFS_INCLUDE_DIR})
-    set(LOVR_PHYSFS ${PHYSFS_LIBRARY})
-  else()
-    set(PHYSFS_BUILD_STATIC OFF CACHE BOOL "")
-    set(PHYSFS_ARCHIVE_7Z OFF CACHE BOOL "")
-    set(PHYSFS_ARCHIVE_GRP OFF CACHE BOOL "")
-    set(PHYSFS_ARCHIVE_WAD OFF CACHE BOOL "")
-    set(PHYSFS_ARCHIVE_HOG OFF CACHE BOOL "")
-    set(PHYSFS_ARCHIVE_MVL OFF CACHE BOOL "")
-    set(PHYSFS_ARCHIVE_QPAK OFF CACHE BOOL "")
-    set(PHYSFS_ARCHIVE_SLB OFF CACHE BOOL "")
-    set(PHYSFS_ARCHIVE_ISO9660 OFF CACHE BOOL "")
-    set(PHYSFS_ARCHIVE_VDF OFF CACHE BOOL "")
-    set(PHYSFS_BUILD_TEST OFF CACHE BOOL "")
-    set(PHYSFS_BUILD_WX_TEST FALSE CACHE BOOL "")
-    add_subdirectory(deps/physfs physfs)
-    include_directories(deps/physfs/src)
-    set(LOVR_PHYSFS physfs)
+  if(NOT APPLE)
+    set(CMAKE_SKIP_RPATH OFF)
   endif()
 endif()
 
@@ -138,7 +110,6 @@ if(NOT (EMSCRIPTEN OR ANDROID))
     set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "")
     set(GLFW_BUILD_TESTS OFF CACHE BOOL "")
     set(GLFW_BUILD_DOCS OFF CACHE BOOL "")
-    set(GLFW_USE_CHDIR OFF CACHE BOOL "")
     set(BUILD_SHARED_LIBS ON CACHE BOOL "")
     add_subdirectory(deps/glfw glfw)
     include_directories(deps/glfw/include)
@@ -181,9 +152,7 @@ endif()
 
 # MSDF
 if(LOVR_ENABLE_DATA)
-  set(BUILD_SHARED_LIBS OFF)
   add_subdirectory(deps/msdfgen lib_msdfgen)
-  set(BUILD_SHARED_LIBS ON)
   include_directories(deps/msdfgen)
   set(LOVR_MSDF lib_msdfgen)
 endif()
@@ -324,25 +293,28 @@ endif()
 set(LOVR_SRC
   src/main.c
   src/core/arr.c
+  src/core/fs.c
   src/core/maf.c
-  src/core/platform.c
+  src/core/map.c
   src/core/ref.c
   src/core/utf.c
   src/core/util.c
+  src/core/zip.c
   src/api/api.c
   src/api/l_lovr.c
-  src/lib/map/map.c
 )
 
-if (LOVR_BUILD_SHARED)
+if(LOVR_BUILD_SHARED)
   add_library(lovr SHARED ${LOVR_SRC})
-else()
+elseif(LOVR_BUILD_EXE)
   add_executable(lovr ${LOVR_SRC})
+else()
+  return()
 endif()
 
 set_target_properties(lovr PROPERTIES C_VISIBILITY_PRESET default)
 set_target_properties(lovr PROPERTIES C_STANDARD 99)
-target_include_directories(lovr PRIVATE src src/core src/modules)
+target_include_directories(lovr PRIVATE src src/modules)
 target_link_libraries(lovr
   ${LOVR_ENET}
   ${LOVR_GLFW}
@@ -355,14 +327,9 @@ target_link_libraries(lovr
   ${LOVR_OPENXR}
   ${LOVR_OCULUS}
   ${LOVR_LEAP}
-  ${LOVR_PHYSFS}
   ${LOVR_PTHREADS}
   ${LOVR_EMSCRIPTEN_FLAGS}
 )
-
-if(LOVR_USE_LUAJIT)
-  target_compile_definitions(lovr PUBLIC -DLOVR_USE_LUAJIT)
-endif()
 
 if(LOVR_ENABLE_AUDIO)
   add_definitions(-DLOVR_ENABLE_AUDIO)
@@ -413,7 +380,6 @@ endif()
 if(LOVR_ENABLE_FILESYSTEM)
   add_definitions(-DLOVR_ENABLE_FILESYSTEM)
   target_sources(lovr PRIVATE
-    src/modules/filesystem/file.c
     src/modules/filesystem/filesystem.c
     src/api/l_filesystem.c
   )
@@ -456,6 +422,9 @@ if(LOVR_ENABLE_HEADSET)
   if(LOVR_USE_OPENVR)
     add_definitions(-DLOVR_USE_OPENVR)
     target_sources(lovr PRIVATE src/modules/headset/openvr.c)
+    if(UNIX)
+      target_compile_options(lovr PRIVATE -Wno-typedef-redefinition)
+    endif()
   endif()
   if(LOVR_USE_OPENXR)
     add_definitions(-DLOVR_USE_OPENXR)
@@ -496,10 +465,6 @@ if(LOVR_ENABLE_MATH)
     src/api/l_vectors.c
     src/lib/noise1234/noise1234.c
   )
-
-  if(LOVR_USE_SSE)
-    add_definitions(-DLOVR_USE_SSE)
-  endif()
 endif()
 
 if(LOVR_ENABLE_PHYSICS)
@@ -547,6 +512,7 @@ endif()
 
 # Platforms
 if(WIN32)
+  target_sources(lovr PRIVATE src/core/os_win32.c)
   set_target_properties(lovr PROPERTIES COMPILE_FLAGS "/wd4244 /MP")
   set_target_properties(lovr PROPERTIES LINK_FLAGS_DEBUG "/SUBSYSTEM:CONSOLE")
   set_target_properties(lovr PROPERTIES LINK_FLAGS_RELEASE "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
@@ -562,7 +528,7 @@ if(WIN32)
       add_custom_command(TARGET lovr POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
         $<TARGET_FILE:${ARGV0}>
-        ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIGURATION>/$<TARGET_FILE_NAME:${ARGV0}>
+        $<TARGET_FILE_DIR:lovr>/$<TARGET_FILE_NAME:${ARGV0}>
       )
     endif()
   endfunction()
@@ -572,10 +538,10 @@ if(WIN32)
   move_dll(${LOVR_ODE})
   move_dll(${LOVR_OPENAL})
   move_dll(${LOVR_OPENVR})
-  move_dll(${LOVR_PHYSFS})
   move_dll(${LOVR_LEAP})
   target_compile_definitions(lovr PRIVATE -DLOVR_GL)
 elseif(APPLE)
+  target_sources(lovr PRIVATE src/core/os_macos.c)
   target_compile_definitions(lovr PRIVATE -DLOVR_GL)
   if(LOVR_BUILD_BUNDLE)
     function(move_lib)
@@ -593,7 +559,6 @@ elseif(APPLE)
     move_lib(${LOVR_ODE})
     move_lib(${LOVR_OPENAL})
     move_lib(${LOVR_OPENVR})
-    move_lib(${LOVR_PHYSFS})
 
     target_sources(lovr PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/lovr.icns")
     set_target_properties(lovr PROPERTIES
@@ -606,10 +571,13 @@ elseif(APPLE)
     )
   endif()
 elseif(EMSCRIPTEN)
+  target_sources(lovr PRIVATE src/core/os_web.c)
   target_compile_definitions(lovr PRIVATE -DLOVR_WEBGL)
 elseif(ANDROID)
+  target_sources(lovr PRIVATE src/core/os_android.c)
   target_link_libraries(lovr log EGL GLESv3)
   target_compile_definitions(lovr PRIVATE -DLOVR_GLES)
 elseif(UNIX)
+  target_sources(lovr PRIVATE src/core/os_linux.c)
   target_compile_definitions(lovr PRIVATE -DLOVR_GL)
 endif()

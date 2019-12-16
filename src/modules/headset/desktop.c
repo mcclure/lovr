@@ -1,7 +1,7 @@
 #include "headset/headset.h"
 #include "graphics/graphics.h"
 #include "core/maf.h"
-#include "core/platform.h"
+#include "core/os.h"
 #include "core/util.h"
 #include <math.h>
 #include <stdint.h>
@@ -154,7 +154,7 @@ static void desktop_renderTo(void (*callback)(void*), void* userdata) {
   Camera camera = { .canvas = NULL, .viewMatrix = { MAT4_IDENTITY }, .stereo = false };
   mat4_perspective(camera.projection[0], state.clipNear, state.clipFar, 67.f * (float) M_PI / 180.f, (float) width / height);
   mat4_multiply(camera.viewMatrix[0], state.headTransform);
-  mat4_invertPose(camera.viewMatrix[0]);
+  mat4_invert(camera.viewMatrix[0]);
   mat4_set(camera.projection[1], camera.projection[0]);
   mat4_set(camera.viewMatrix[1], camera.viewMatrix[0]);
   lovrGraphicsSetCamera(&camera, true);
@@ -175,12 +175,12 @@ static void desktop_update(float dt) {
   float movespeed = 3.f * dt;
   float turnspeed = 3.f * dt;
   float damping = MAX(1.f - 20.f * dt, 0);
-  
+
   int width, height;
   double mx, my, aspect = 1;
   lovrPlatformGetWindowSize(&width, &height);
   lovrPlatformGetMousePosition(&mx, &my);
-  
+
   // Mouse move
   if (lovrPlatformIsMouseDown(MOUSE_LEFT)) {
     lovrPlatformSetMouseMode(MOUSE_MODE_GRABBED);
@@ -225,7 +225,7 @@ static void desktop_update(float dt) {
   mat4_translate(state.headTransform, state.position[0], state.position[1], state.position[2]);
   mat4_rotate(state.headTransform, state.yaw, 0.f, 1.f, 0.f);
   mat4_rotate(state.headTransform, state.pitch, 1.f, 0.f, 0.f);
-  
+
   // Update hand transform to follow cursor
   double px = mx, py = my;
   if (width > 0 && height > 0) {
@@ -233,7 +233,7 @@ static void desktop_update(float dt) {
     px = (px / width)*2 - 1.0;
     py = (py / height)*2 - 1.0;
     aspect = height/(double)width;
-    
+
     px +=  0.2; // neutral position = pointing towards center-ish
     px *= 0.6; // fudged range to juuust cover pointing at the whole scene, but not outside it
   }

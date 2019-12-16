@@ -1,6 +1,5 @@
 #include "api.h"
 #include "event/event.h"
-#include "filesystem/filesystem.h"
 #include "thread/thread.h"
 #include "thread/channel.h"
 #include "core/ref.h"
@@ -24,31 +23,38 @@ static int threadRunner(void* data) {
   luaL_register(L, NULL, lovrModules);
   lua_pop(L, 2);
 
-  if (luaL_loadbuffer(L, thread->body->data, thread->body->size, "thread") || lua_pcall(L, 0, 0, 0)) {
-    size_t length;
-    const char* error = lua_tolstring(L, -1, &length);
-    mtx_lock(&thread->lock);
-    thread->error = malloc(length + 1);
-    if (thread->error) {
-      memcpy(thread->error, error, length + 1);
-      lovrEventPush((Event) {
-        .type = EVENT_THREAD_ERROR,
-        .data.thread = { thread, thread->error }
-      });
+  if (!luaL_loadbuffer(L, thread->body->data, thread->body->size, "thread")) {
+    for (size_t i = 0; i < thread->argumentCount; i++) {
+      luax_pushvariant(L, &thread->arguments[i]);
     }
-    thread->running = false;
-    mtx_unlock(&thread->lock);
-    lovrRelease(Thread, thread);
-    lua_close(L);
-    return 1;
+
+    if (!lua_pcall(L, thread->argumentCount, 0, 0)) {
+      mtx_lock(&thread->lock);
+      thread->running = false;
+      mtx_unlock(&thread->lock);
+      lovrRelease(Thread, thread);
+      lua_close(L);
+      return 0;
+    }
   }
 
+  // Error handling
+  size_t length;
+  const char* error = lua_tolstring(L, -1, &length);
   mtx_lock(&thread->lock);
+  thread->error = malloc(length + 1);
+  if (thread->error) {
+    memcpy(thread->error, error, length + 1);
+    lovrEventPush((Event) {
+      .type = EVENT_THREAD_ERROR,
+      .data.thread = { thread, thread->error }
+    });
+  }
   thread->running = false;
   mtx_unlock(&thread->lock);
   lovrRelease(Thread, thread);
   lua_close(L);
-  return 0;
+  return 1;
 }
 
 static int l_lovrThreadNewThread(lua_State* L) {
@@ -62,7 +68,7 @@ static int l_lovrThreadNewThread(lua_State* L) {
       memcpy(data, str, length + 1);
       blob = lovrBlobCreate(data, length, "thread code");
     } else {
-      void* code = lovrFilesystemRead(str, -1, &length);
+      void* code = luax_readfile(str, &length);
       lovrAssert(code, "Could not read thread code from file '%s'", str);
       blob = lovrBlobCreate(code, length, str);
     }
@@ -80,6 +86,7 @@ static int l_lovrThreadGetChannel(lua_State* L) {
   const char* name = luaL_checkstring(L, 1);
   Channel* channel = lovrThreadGetChannel(name);
   luax_pushtype(L, Channel, channel);
+  lovrRelease(Channel, channel);
   return 1;
 }
 
