@@ -25,7 +25,16 @@ static struct {
   float clipFar;
   float pitch;
   float yaw;
+
+  bool kbamBlocked;
 } state;
+
+void lovrHeadsetFakeKbamBlock(bool block) {
+  if (block != state.kbamBlocked) {
+    lovrLog("%s fake headset keyboard/mouse controls\n", block?"Disabling":"Re-enabling");
+    state.kbamBlocked = block;
+  }
+}
 
 static bool desktop_init(float offset, uint32_t msaa) {
   state.offset = offset;
@@ -41,7 +50,7 @@ static bool desktop_init(float offset, uint32_t msaa) {
 }
 
 static void desktop_destroy(void) {
-  //
+  state.kbamBlocked = false;
 }
 
 static bool desktop_getName(char* name, size_t length) {
@@ -114,6 +123,7 @@ static bool desktop_getVelocity(Device device, vec3 velocity, vec3 angularVeloci
 }
 
 static bool desktop_isDown(Device device, DeviceButton button, bool* down) {
+  if (state.kbamBlocked) return false;
   if (device != DEVICE_HAND_LEFT || button != BUTTON_TRIGGER) {
     return false;
   }
@@ -141,8 +151,8 @@ static ModelData* desktop_newModelData(Device device) {
 static void desktop_renderTo(void (*callback)(void*), void* userdata) {
   uint32_t width, height;
   desktop_getDisplayDimensions(&width, &height);
-  Camera camera = { .canvas = NULL, .viewMatrix = { MAT4_IDENTITY }, .stereo = true };
-  mat4_perspective(camera.projection[0], state.clipNear, state.clipFar, 67.f * (float) M_PI / 180.f, (float) width / 2.f / height);
+  Camera camera = { .canvas = NULL, .viewMatrix = { MAT4_IDENTITY }, .stereo = false };
+  mat4_perspective(camera.projection[0], state.clipNear, state.clipFar, 67.f * (float) M_PI / 180.f, (float) width / height);
   mat4_multiply(camera.viewMatrix[0], state.headTransform);
   mat4_invert(camera.viewMatrix[0]);
   mat4_set(camera.projection[1], camera.projection[0]);
@@ -153,6 +163,8 @@ static void desktop_renderTo(void (*callback)(void*), void* userdata) {
 }
 
 static void desktop_update(float dt) {
+  if (state.kbamBlocked) return;
+
   bool front = lovrPlatformIsKeyDown(KEY_W) || lovrPlatformIsKeyDown(KEY_UP);
   bool back = lovrPlatformIsKeyDown(KEY_S) || lovrPlatformIsKeyDown(KEY_DOWN);
   bool left = lovrPlatformIsKeyDown(KEY_A) || lovrPlatformIsKeyDown(KEY_LEFT);
