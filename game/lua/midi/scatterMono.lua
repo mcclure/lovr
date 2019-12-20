@@ -1,11 +1,10 @@
 -- Play random notes, monophonic
 
--- TODO: Add a device selector
-
 namespace "midi"
 
 local flat = require "engine.flat"
 local ui2 = require "ent.ui2"
+local selector = require "midi.support.ent.selector"
 
 local ScatterMidi = classNamed("ScatterMidi", ui2.ScreenEnt)
 
@@ -34,15 +33,18 @@ function ScatterMidi:onLoad()
 	self.t = 0
 
 	-- UI
+	self.outSelect = selector.SelectorEnt{filter="out", labelPrefix="Midi Out: "}
+
 	ui2.routeMouse()
 	local off = ui2.ButtonEnt{label="Off", onButton = function() self:allOff() end}
 	self.freeze = ui2.ToggleEnt{label="Freeze"}
 
-	local layout = ui2.PileLayout{managed={off, self.freeze}, parent=self}
+	local layout = ui2.PileLayout{managed={self.outSelect, off, self.freeze}, parent=self, mutable=true}
 	layout:layout()
 end
 
 function ScatterMidi:onUpdate(dt)
+	self.device = self.outSelect.selected
 	if not self.freeze.down then
 		self.t = self.t + dt
 	end

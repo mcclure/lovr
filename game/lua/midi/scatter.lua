@@ -1,11 +1,11 @@
 -- Play random notes
 
--- TODO: Add a device selector
 
 namespace "midi"
 
 local flat = require "engine.flat"
 local ui2 = require "ent.ui2"
+local selector = require "midi.support.ent.selector"
 
 local ScatterMidi = classNamed("ScatterMidi", ui2.ScreenEnt)
 
