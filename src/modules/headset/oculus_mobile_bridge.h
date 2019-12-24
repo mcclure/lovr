@@ -75,10 +75,15 @@ typedef enum
   BRIDGE_LOVR_TOUCH_TRIGGER_ANTI  = 0x00000200, // "The finger is sufficiently far away from the trigger to not be considered in proximity to it."
 } BridgeLovrTouch;
 
-// Bit identical with VrApi_Input.h ovrControllerCapabilties
 typedef enum {
-  BRIDGE_LOVR_HAND_LEFT = 0x00000004,
-  BRIDGE_LOVR_HAND_RIGHT = 0x00000008,
+  BRIDGE_LOVR_HAND_LEFT = 0x00000004,  // Bit identical with VrApi_Input.h ovrControllerCapabilties
+  BRIDGE_LOVR_HAND_RIGHT = 0x00000008, // Bit identical with VrApi_Input.h ovrControllerCapabilties
+
+  BRIDGE_LOVR_HAND_CAPMASK = BRIDGE_LOVR_HAND_LEFT | BRIDGE_LOVR_HAND_RIGHT, // Bits taken from ovrControllerCapabilities
+
+  BRIDGE_LOVR_HAND_HANDSET   = 0x00000016, // If true, a tracked handset (as opposed to a "controller")
+  BRIDGE_LOVR_HAND_RIFTY     = 0x00000032, // If true, handset is "oculus quest style"
+  BRIDGE_LOVR_HAND_TRACKING  = 0x00000064, // If true, hand tracking
 } BridgeLovrHand;
 
 // Values identical with headset.h HeadsetType
@@ -91,14 +96,20 @@ typedef enum
 } BridgeLovrDevice;
 
 typedef struct {
-  bool handset;
   BridgeLovrHand hand;
   BridgeLovrPose pose;
   BridgeLovrMovement movement;
-  BridgeLovrTrackpad trackpad;
-  float trigger, grip;
-  BridgeLovrButton buttonDown;
-  BridgeLovrTouch  buttonTouch;
+  union {
+    struct {
+      BridgeLovrTrackpad trackpad;
+      float trigger, grip;
+      BridgeLovrButton buttonDown;
+      BridgeLovrTouch  buttonTouch;
+    } handset;
+    struct {
+      int temp;
+    } tracking;
+  };
 } BridgeLovrController;
 
 #define BRIDGE_LOVR_CONTROLLERMAX 3
