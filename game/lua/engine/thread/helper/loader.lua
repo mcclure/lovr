@@ -1,5 +1,6 @@
 -- Helper thread impl for the Loader class
 
+require 'lovr.filesystem'
 require "engine.thread.helper.boot"
 namespace "minimal"
 

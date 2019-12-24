@@ -1,7 +1,7 @@
 
 namespace = require "engine.namespace"
 
-local singleThread = true -- Set to true to force everything to a single thread
+local singleThread = false -- Set to true to force everything to a single thread
 
 -- Load namespace basics
 do
@@ -31,11 +31,6 @@ do
 	require "engine.common_ent"
 	require "engine.lovr"
 	require "engine.mode"
-
-	space.cpml = require "cpml" -- CPML classes missing? Add here:
-	for _,v in ipairs{"bound2", "bound3", "vec2", "vec3", "quat", "mat4", "color", "utils"} do
-		space[v] = space.cpml[v]
-	end
 end
 
 --[[
