@@ -95,6 +95,16 @@ typedef enum
   BRIDGE_LOVR_DEVICE_QUEST = 5,
 } BridgeLovrDevice;
 
+typedef struct { // Assumed constant
+  int members;
+  const char **strings;
+} BridgeLovrStringList;
+
+typedef struct { // Assumed constant
+  int members;
+  BridgeLovrPose *poses;
+} BridgeLovrPoseList;
+
 typedef struct {
   BridgeLovrHand hand;
   BridgeLovrPose pose;
@@ -107,7 +117,11 @@ typedef struct {
       BridgeLovrTouch  buttonTouch;
     } handset;
     struct {
-      int temp;
+      bool live;
+      float confidence;
+      float handScale;
+      BridgeLovrStringList *bones;
+      BridgeLovrPoseList *poses;
     } tracking;
   };
 } BridgeLovrController;
