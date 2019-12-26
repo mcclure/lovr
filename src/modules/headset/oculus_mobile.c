@@ -472,6 +472,28 @@ void bridgeLovrUpdate(BridgeLovrUpdateData *updateData) {
     pauseState = PAUSESTATE_NONE;
   }
 
+  // Temporary hand handling
+  for(int c = 0; c < updateData->controllerCount; c++) {
+    BridgeLovrController *in = &updateData->controllers[c];
+    if (in->hand & BRIDGE_LOVR_HAND_TRACKING) {
+      bool right = in->hand & BRIDGE_LOVR_HAND_RIGHT;
+      LovrOculusMobileHands *out = &lovrOculusMobileHands[right];
+      out->live = true;
+      out->confidence = in->tracking.confidence;
+      out->handScale = in->tracking.handScale;
+      out->pose = in->pose;
+
+      LOG("ABC %d of %d: %x, %x", (int)c, (int)updateData->controllerCount, in, in->tracking.poses);
+      size_t arraySize = in->tracking.poses->members * sizeof(BridgeLovrPose);
+      if (in->tracking.poses->members > out->handPoses.members) {
+        free(out->handPoses.poses);
+        out->handPoses.poses = malloc(arraySize);
+      }
+      out->handPoses.members = in->tracking.poses->members;
+      memcpy(out->handPoses.poses, in->tracking.poses->poses, arraySize);
+    }
+  }
+
   // Go
   if (coroutineStartFunctionRef != LUA_NOREF) {
     lua_rawgeti(T, LUA_REGISTRYINDEX, coroutineStartFunctionRef);
