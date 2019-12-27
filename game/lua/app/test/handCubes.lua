@@ -16,19 +16,41 @@ local skeletonSkeleton = {
 }
 local skeletonTipStart=20
 local gray = {0.5,0.5,0.5}
+local floorSize = 20
+local cubeTickRate=0.075
 
 function HandCubes:onLoad()
 	lovr.graphics.setBackgroundColor(0.8,0.8,0.8)
 	self.cubes = DebugCubes{size=0.01}:insert(self)
 	self.lastPoints = {}
+
+	-- Create a nice floor
+	local floorPixels = 24
+	local data = lovr.data.newTextureData(floorPixels, floorPixels, "rgba")
+	for x=0,(floorPixels-1) do
+		for y=0,(floorPixels-1) do
+			local bright = (x+y)%2 == 0 and 0.5 or 0.75
+			local function sq(x) return x*x end
+			local alpha = math.min(1, (1-math.max(0, math.min(1, 2*math.sqrt(sq(0.5-x/(floorPixels-1))+sq(0.5-y/(floorPixels-1))))))*1.2)
+			print(x,y,bright,alpha)
+			data:setPixel(x,y,bright,bright,bright,alpha)
+		end
+	end
+	local texture = lovr.graphics.newTexture(data, {mipmaps=false})
+	texture:setFilter("nearest")
+	self.floorMaterial = lovr.graphics.newMaterial(texture)
 end
 
 function HandCubes:onUpdate()
 	local time = lovr.timer.getTime()
-	local cubeColor, lineColor
-	if useColor then
+	local cubeColor, lineColor, cubeTick
+	if useColor then -- In color mode draw trails that update every so often
 		cubeColor = color.from_hsv((time * 100)%360, 1, 1)
 		lineColor = gray
+		if not self.lastCubeTick or time-self.lastCubeTick>=cubeTickRate then
+			self.lastCubeTick = time
+			cubeTick = true
+		end
 	end
 	for i,controllerName in ipairs(lovr.headset.getHands()) do
 		local handAt = Loc(unpackPose(controllerName))
@@ -41,8 +63,8 @@ function HandCubes:onUpdate()
 			lovr.headset.hand.getPoints(controllerName)
 		)
 		for i2,at in ipairs(points) do
-			if useColor and self.lastPoints[i] then
-				self.cubes:add({at=at.at, lineTo=self.lastPoints[i][i2].at, noCube=true, lineColor=cubeColor}, 2)
+			if cubeTick and self.lastPoints[i] then
+				self.cubes:add({at=at.at, lineTo=self.lastPoints[i][i2].at, noCube=true, lineColor=cubeColor}, 1)
 			end
 			local lineToPt = skeletonSkeleton[i2]
 			self.cubes:add(
@@ -50,8 +72,20 @@ function HandCubes:onUpdate()
 				true
 			)
 		end
-		self.lastPoints[i] = points
+		if cubeTick then
+			self.lastPoints[i] = points
+		end
 	end
+end
+
+function HandCubes:onDraw()
+	-- Draw floor
+	lovr.graphics.setBlendMode("alpha", "alphamultiply")
+	lovr.graphics.setColor(1,1,1,1)
+	lovr.graphics.plane(self.floorMaterial, 0,0,0, floorSize, floorSize, math.pi/2,1,0,0)
+
+	-- Turn off blend mode so DebugCubes can batch more efficiently
+	lovr.graphics.setBlendMode(nil)
 end
 
 return HandCubes
