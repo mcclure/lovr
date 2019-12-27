@@ -6,7 +6,7 @@ local DebugCubes = require "ent.debug.debugCubes"
 
 function HandCubes:onLoad()
 	lovr.graphics.setBackgroundColor(0.8,0.8,0.8)
-	self.cubes = DebugCubes{size=0.1}:insert(self)
+	self.cubes = DebugCubes{size=0.025}:insert(self)
 end
 
 function HandCubes:onUpdate()
@@ -14,13 +14,11 @@ function HandCubes:onUpdate()
 		-- Attempt to load a model
 		local points = lovr.headset.hand.getPoints(controllerName)
 		for i2,point in ipairs(points) do
-			local at = vec3(unpack(points[1]))
-			print("POINT:", at:unpack())
+			local at = vec3(unpack(point[1]))
 			self.cubes:add({at=at}, true)
 		end
 		self.lastPoints = points
 	end
-	print("----------------")
 	self.cubes:add({at=vec3(self.cubes.time%1, 0,0)}, true)
 end
 

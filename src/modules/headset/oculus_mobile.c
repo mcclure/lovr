@@ -483,7 +483,6 @@ void bridgeLovrUpdate(BridgeLovrUpdateData *updateData) {
       out->handScale = in->tracking.handScale;
       out->pose = in->pose;
 
-      LOG("ABC %d of %d: %x, %x", (int)c, (int)updateData->controllerCount, in, in->tracking.poses);
       size_t arraySize = in->tracking.poses->members * sizeof(BridgeLovrPose);
       if (in->tracking.poses->members > out->handPoses.members) {
         free(out->handPoses.poses);

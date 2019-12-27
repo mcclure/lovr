@@ -76,14 +76,15 @@ typedef enum
 } BridgeLovrTouch;
 
 typedef enum {
-  BRIDGE_LOVR_HAND_LEFT = 0x00000004,  // Bit identical with VrApi_Input.h ovrControllerCapabilties
-  BRIDGE_LOVR_HAND_RIGHT = 0x00000008, // Bit identical with VrApi_Input.h ovrControllerCapabilties
+  BRIDGE_LOVR_HAND_LEFT =  0x00000001, // Bit identical with VrApi_Input.h ovrHandTrackingStatus
+  BRIDGE_LOVR_HAND_RIGHT = 0x00000002, // Bit identical with VrApi_Input.h ovrHandTrackingStatus
 
-  BRIDGE_LOVR_HAND_CAPMASK = BRIDGE_LOVR_HAND_LEFT | BRIDGE_LOVR_HAND_RIGHT, // Bits taken from ovrControllerCapabilities
+  BRIDGE_LOVR_HAND_HANDMASK = BRIDGE_LOVR_HAND_LEFT | BRIDGE_LOVR_HAND_RIGHT, // Bits to mask a ovrHandTrackingStatus by
+  BRIDGE_LOVR_HAND_CAPSHIFT = 2, // Right shift a ovrControllerCapabilities by this many bits to let BRIDGE_LOVR_HAND_HANDMASK work
 
-  BRIDGE_LOVR_HAND_HANDSET   = 0x00000016, // If true, a tracked handset (as opposed to a "controller")
-  BRIDGE_LOVR_HAND_RIFTY     = 0x00000032, // If true, handset is "oculus quest style"
-  BRIDGE_LOVR_HAND_TRACKING  = 0x00000064, // If true, hand tracking
+  BRIDGE_LOVR_HAND_HANDSET   = 0x00000004, // If true, a tracked handset (as opposed to a "controller")
+  BRIDGE_LOVR_HAND_RIFTY     = 0x00000008, // If true, handset is "oculus quest style"
+  BRIDGE_LOVR_HAND_TRACKING  = 0x00000010, // If true, hand tracking
 } BridgeLovrHand;
 
 // Values identical with headset.h HeadsetType

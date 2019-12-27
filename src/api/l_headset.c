@@ -606,7 +606,6 @@ static void pushTableOfNumbers(lua_State* L, int idx, int count, ...) { // Takes
   va_list args;
   va_start(args, count);
 
-  int points = 0;
   lua_newtable(L);
   for(int c = 0; c < count; c++) {
     // Note we pass floats but they become doubles because of some garbage about how va_list works.
@@ -614,7 +613,7 @@ static void pushTableOfNumbers(lua_State* L, int idx, int count, ...) { // Takes
     lua_pushnumber(L, va_arg(args, double));
     lua_rawseti (L, -2, c+1);
   }
-  lua_rawseti (L, -2, ++points);
+  lua_rawseti (L, -2, idx);
 
   va_end(args);
 }
@@ -623,15 +622,15 @@ static int l_lovrHeadsetHandsGetPoints(lua_State* L) {
   Device device = luax_optdevice(L, 1);
   lovrAssert(device == DEVICE_HAND_LEFT || device == DEVICE_HAND_RIGHT, "Only works with hands");
 
-  LovrOculusMobileHands hand = lovrOculusMobileHands[device == DEVICE_HAND_RIGHT];
+  LovrOculusMobileHands *hand = &lovrOculusMobileHands[device == DEVICE_HAND_RIGHT];
 
   int points = 0;
   lua_newtable(L);
-  for(int c = 0; c < hand.handPoses.members; c++) {
-    BridgeLovrPose pose = hand.handPoses.poses[c];
+  for(int c = 0; c < hand->handPoses.members; c++) {
+    BridgeLovrPose *pose = &hand->handPoses.poses[c];
     lua_newtable(L);
-    pushTableOfNumbers(L, 1, 3, pose.x, pose.y, pose.z);
-    pushTableOfNumbers(L, 2, 4, pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
+    pushTableOfNumbers(L, 1, 3, pose->x, pose->y, pose->z);
+    pushTableOfNumbers(L, 2, 4, pose->q[0], pose->q[1], pose->q[2], pose->q[3]);
     lua_rawseti (L, -2, ++points);
   }
 
