@@ -2,7 +2,7 @@ namespace "standard"
 
 -- Base class for an animation
 -- spec:
---     cubes: {at=vec3, q=quat, color={r,g,b}, expire=time in seconds, size=diameter, lineTo=vec3, lineColor={r,g,b}}
+--     cubes: {at=vec3, rotate=quat, color={r,g,b}, expire=time in seconds, size=diameter, lineTo=vec3, lineColor={r,g,b}}
 --            only "at" is required, also add "noCube=true" to suppress cube
 --     topCubes: same as cubes
 --     speed: set to slow/speed all timeouts
@@ -100,7 +100,7 @@ function DebugCubes:doDraw(cubes)
 		local color = t.color or self.color
 		lovr.graphics.setColor(unpack(color))
 		if not t.noCube then
-			lovr.graphics.cube('fill', t.at.x, t.at.y, t.at.z, t.size or self.size, maybeUnpack(t.q))
+			lovr.graphics.cube('fill', t.at.x, t.at.y, t.at.z, t.size or self.size, maybeUnpack(t.rotate))
 		end
 
 		if t.lineTo then

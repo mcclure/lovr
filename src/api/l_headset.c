@@ -621,7 +621,6 @@ static void pushTableOfNumbers(lua_State* L, int idx, int count, ...) { // Takes
 static int l_lovrHeadsetHandsGetPoints(lua_State* L) {
   Device device = luax_optdevice(L, 1);
   lovrAssert(device == DEVICE_HAND_LEFT || device == DEVICE_HAND_RIGHT, "Only works with hands");
-
   LovrOculusMobileHands *hand = &lovrOculusMobileHands[device == DEVICE_HAND_RIGHT];
 
   int points = 0;
