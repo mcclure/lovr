@@ -105,7 +105,7 @@ function DebugCubes:doDraw(cubes)
 
 		if t.lineTo then
 			lovr.graphics.setShader()
-			if t.lineColor then lovr.graphics.setColor(t.lineColor:unpack()) end
+			if t.lineColor then lovr.graphics.setColor(unpack(t.lineColor)) end
 			lovr.graphics.line(t.at.x, t.at.y, t.at.z, t.lineTo:unpack())
 		end
 	end
