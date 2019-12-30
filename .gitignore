@@ -1,6 +1,8 @@
 .tup
 .obj
-*.config
+tup.config
+config/*
+src/resources/*.{ttf,json,lua}.h
 /build.sh
 /watch.sh
 /debug.sh
