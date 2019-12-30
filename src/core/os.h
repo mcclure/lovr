@@ -53,23 +53,21 @@ typedef void (*windowResizeCallback)(int width, int height);
 typedef void (*mouseButtonCallback)(MouseButton button, ButtonAction action);
 typedef void (*keyboardCallback)(KeyCode key, ButtonAction action);
 
-typedef void (*gpuProc)(void);
-typedef gpuProc (*getProcAddressProc)(const char*);
-extern getProcAddressProc lovrGetProcAddress;
-
 bool lovrPlatformInit(void);
 void lovrPlatformDestroy(void);
 const char* lovrPlatformGetName(void);
-void lovrPlatformPollEvents(void);
 double lovrPlatformGetTime(void);
 void lovrPlatformSetTime(double t);
+void lovrPlatformSleep(double seconds);
 void lovrPlatformOpenConsole(void);
+void lovrPlatformPollEvents(void);
 bool lovrPlatformCreateWindow(WindowFlags* flags);
 bool lovrPlatformHasWindow(void);
 void lovrPlatformGetWindowSize(int* width, int* height);
 void lovrPlatformGetFramebufferSize(int* width, int* height);
 void lovrPlatformSetSwapInterval(int interval);
 void lovrPlatformSwapBuffers(void);
+void* lovrPlatformGetProcAddress(const char* function);
 void lovrPlatformOnWindowClose(windowCloseCallback callback);
 void lovrPlatformOnWindowResize(windowResizeCallback callback);
 void lovrPlatformOnMouseButton(mouseButtonCallback callback);
@@ -78,8 +76,6 @@ void lovrPlatformGetMousePosition(double* x, double* y);
 void lovrPlatformSetMouseMode(MouseMode mode);
 bool lovrPlatformIsMouseDown(MouseButton button);
 bool lovrPlatformIsKeyDown(KeyCode key);
-void lovrPlatformSleep(double seconds);
-int lovrPlatformGetExecutablePath(char* dest, uint32_t size);
 #ifdef _WIN32
 #include <windows.h>
 HANDLE lovrPlatformGetWindow(void);

@@ -1,13 +1,13 @@
 #include "headset/headset.h"
 #include "oculus_mobile_bridge.h"
-#include "math.h"
 #include "graphics/graphics.h"
 #include "graphics/canvas.h"
+#include "core/os.h"
 #include "lib/glad/glad.h"
+#include <android/log.h>
 #include <assert.h>
 #include <stdlib.h>
-#include <android/log.h>
-#include "platform.h"
+#include <math.h>
 
 #define LOG(...)  __android_log_print(ANDROID_LOG_DEBUG, "LOVR", __VA_ARGS__)
 #define INFO(...) __android_log_print(ANDROID_LOG_INFO,  "LOVR", __VA_ARGS__)
@@ -300,7 +300,6 @@ bool lovrPlatformHasWindow() {
 
 #include <stdio.h>
 #include <android/log.h>
-#include "physfs.h"
 #include <sys/stat.h>
 #include <assert.h>
 
@@ -312,8 +311,8 @@ bool lovrPlatformHasWindow() {
 #include "headset/oculus_mobile.h"
 
 // Implicit from boot.lua.h
-extern unsigned char boot_lua[];
-extern unsigned int boot_lua_len;
+extern unsigned char src_resources_boot_lua[];
+extern unsigned int src_resources_boot_lua_len;
 
 static lua_State *L, *T;
 static int coroutineRef = LUA_NOREF;
@@ -409,7 +408,7 @@ static void bridgeLovrInitState() {
   // Run init
 
   lua_pushcfunction(L, luax_getstack);
-  if (luaL_loadbuffer(L, (const char*) boot_lua, boot_lua_len, "boot.lua") || lua_pcall(L, 0, 1, -2)) {
+  if (luaL_loadbuffer(L, (const char*) src_resources_boot_lua, src_resources_boot_lua_len, "@boot.lua") || lua_pcall(L, 0, 1, -2)) {
     WARN("\n LUA STARTUP FAILED: %s\n", lua_tostring(L, -1));
     lua_close(L);
     assert(0);

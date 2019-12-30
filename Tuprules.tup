@@ -1,33 +1,27 @@
 ROOT = $(TUP_CWD)
 
-# Optimization
-ifeq (@(DEBUG),y)
-  CFLAGS += -g
-else
-  CFLAGS += -Os
-endif
-
-# Warnings
-# -Wno-typedef-redefinition is for OpenVR
-# -Wno-unused-parameter is turned off just because it's kinda annoying
-CFLAGS += -Werror -Wall -Wextra -pedantic -std=c99
-CFLAGS += -Wno-typedef-redefinition
-CFLAGS += -Wno-unused-parameter
-
-# Symbols are manually exported as-needed using the LOVR_EXPORT macro to reduce file size.
-CFLAGS += -fvisibility=hidden
-
-# Include paths
+## Base
+CFLAGS += -std=c99 -pedantic
+CFLAGS += -D_POSIX_C_SOURCE=200809L
 CFLAGS += -I$(ROOT)/src
-CFLAGS += -I$(ROOT)/src/core
 CFLAGS += -I$(ROOT)/src/modules
+CFLAGS += -fvisibility=hidden
+CFLAGS += -Wall -Wextra
+CFLAGS += -Wno-unused-parameter
+CFLAGS_@(OPENVR) += -Wno-typedef-redefinition
+CFLAGS_@(STRICT) += -Werror
+CFLAGS_@(DEBUG) += -g
+CFLAGS_@(OPTIMIZE) += -Os
+CFLAGS_@(SANITIZE) += -fsanitize=address,undefined
+LDFLAGS_@(SANITIZE) += -fsanitize=address,undefined
 
-# Modules
+## Modules
 CFLAGS_@(AUDIO) += -DLOVR_ENABLE_AUDIO
 CFLAGS_@(DATA) += -DLOVR_ENABLE_DATA
 CFLAGS_@(EVENT) += -DLOVR_ENABLE_EVENT
 CFLAGS_@(FILESYSTEM) += -DLOVR_ENABLE_FILESYSTEM
 CFLAGS_@(GRAPHICS) += -DLOVR_ENABLE_GRAPHICS
+CFLAGS_@(GRAPHICS) += -DLOVR_@(GL)
 CFLAGS_@(HEADSET) += -DLOVR_ENABLE_HEADSET
 CFLAGS_@(MATH) += -DLOVR_ENABLE_MATH
 CFLAGS_@(PHYSICS) += -DLOVR_ENABLE_PHYSICS
@@ -36,7 +30,7 @@ CFLAGS_@(TIMER) += -DLOVR_ENABLE_TIMER
 CFLAGS_@(JSON) += -DLOVR_ENABLE_JSON
 CFLAGS_@(ENET) += -DLOVR_ENABLE_ENET
 
-# Headset backends
+## Headset backends
 CFLAGS_@(SIMULATOR) += -DLOVR_USE_DESKTOP_HEADSET
 CFLAGS_@(OPENVR) += -DLOVR_USE_OPENVR
 CFLAGS_@(OPENXR) += -DLOVR_USE_OPENXR
@@ -46,47 +40,78 @@ CFLAGS_@(VRAPI) += -DLOVR_USE_OCULUS_MOBILE
 CFLAGS_@(WEBVR) += LOVR_USE_WEBVR
 CFLAGS_@(LEAP) += LOVR_USE_LEAP
 
-# SIMD
-ifeq (@(TUP_ARCH),x86_64)
-  CFLAGS += -DLOVR_USE_SSE
+## Platforms
+# A little gnarly, but basically you can set CONFIG_PLATFORM to pick a specific one, otherwise
+# we use the builtin TUP_PLATFORM which is the current OS (so it won't work with android/web).
+# Also macosx gets converted to macos
+ifeq (@(PLATFORM),)
+  PLATFORM = @(TUP_PLATFORM)
+else
+  PLATFORM = @(PLATFORM)
+endif
+ifeq ($(PLATFORM),macosx)
+  PLATFORM = macos
 endif
 
-# Lua
-CFLAGS_@(LUAJIT) += -DLOVR_USE_LUAJIT
-
-# OpenGL
-CFLAGS += -DLOVR_@(GL)
-
-# Libraries
-CFLAGS += @(LUA_CFLAGS)
-CFLAGS += @(GLFW_CFLAGS)
-CFLAGS += @(OPENAL_CFLAGS)
-CFLAGS += @(PHYSFS_CFLAGS)
-CFLAGS += @(MSDFGEN_CFLAGS)
-CFLAGS += @(ODE_CFLAGS)
-CFLAGS += @(OPENVR_CFLAGS)
-CFLAGS += @(OPENXR_CFLAGS)
-CFLAGS += @(ENET_CFLAGS)
-
-LDFLAGS += @(LUA_LDFLAGS)
-LDFLAGS += @(GLFW_LDFLAGS)
-LDFLAGS += @(OPENAL_LDFLAGS)
-LDFLAGS += @(PHYSFS_LDFLAGS)
-LDFLAGS += @(MSDFGEN_LDFLAGS)
-LDFLAGS += @(ODE_LDFLAGS)
-LDFLAGS += @(OPENVR_LDFLAGS)
-LDFLAGS += @(OPENXR_LDFLAGS)
-LDFLAGS += @(ENET_LDFLAGS)
-
-CFLAGS += @(CFLAGS)
-LDFLAGS += @(LDFLAGS)
-
-# Platforms
-ifeq (@(TUP_PLATFORM),macosx)
+ifeq ($(PLATFORM),macos)
   LDFLAGS += -lobjc
+  LDFLAGS += -pagezero_size 10000 -image_base 100000000
+  ORIGIN = @executable_path
+  SO = dylib
+endif
+ifeq ($(PLATFORM),linux)
+  LDFLAGS += -lm -lpthread
+  ORIGIN = \$ORIGIN
+  SO = so
 endif
 
-# Macros
-!compile = |> ^ CC %f^ @(CC) $(CFLAGS) $(CFLAGS_y) -c %f -o %o |> $(ROOT)/.obj/%B.o $(ROOT)/<objects>
-!link = |> ^ LD %o^ @(CC) $(LDFLAGS) -o %o |>
-!embed = |> ^ XD %f^ xxd -i %f > %o |>
+## Libraries
+ifeq (@(CMAKE_DEPS),y)
+
+  # enet
+  CFLAGS_@(ENET) += -I$(ROOT)/deps/enet/include
+  LDFLAGS_@(ENET) += -L$(ROOT)/build/enet -lenet
+
+  # LuaJIT
+  CFLAGS += -I$(ROOT)/deps/luajit/src
+  LDFLAGS += -L$(ROOT)/build/luajit/src -lluajit
+  LIBS += $(ROOT)/build/luajit/src/libluajit.$(SO)
+
+  # msdfgen
+  CFLAGS_@(DATA) += -I$(ROOT)/deps/msdfgen
+  LDFLAGS_@(DATA) += -L$(ROOT)/build/lib_msdfgen -lmsdfgen
+  LIBS_@(DATA) += $(ROOT)/build/lib_msdfgen/libmsdfgen.$(SO)
+
+  # ode
+  CFLAGS_@(PHYSICS) += -I$(ROOT)/deps/ode/include -I$(ROOT)/build/ode/include
+  LDFLAGS_@(PHYSICS) += -L$(ROOT)/build/ode -lode
+  LIBS_@(PHYSICS) += $(ROOT)/build/ode/libode.$(SO)
+
+  # glfw
+  CFLAGS += -I$(ROOT)/deps/glfw/include
+  LDFLAGS += -L$(ROOT)/build/glfw/src -lglfw
+  LIBS += $(ROOT)/build/glfw/src/libglfw.*$(SO)*
+
+  # OpenVR
+  CFLAGS_@(OPENVR) += -I$(ROOT)/deps/openvr/headers
+  LDFLAGS_@(OPENVR) += -L$(ROOT)/build/openvr_api -lopenvr_api
+  LIBS_@(OPENVR) += $(ROOT)/build/openvr_api/libopenvr_api.$(SO)
+
+  # OpenAL
+  CFLAGS_@(AUDIO) += -I$(ROOT)/deps/openal-soft/include
+  LDFLAGS_@(AUDIO) += -L$(ROOT)/build/openal -lopenal
+  LIBS_@(AUDIO) += $(ROOT)/build/openal/libopenal.*$(SO)*
+
+  # Configure rpath to look for libraries in a `libs` folder next to the executable
+  LDFLAGS += -Wl,-rpath,$(ORIGIN)/libs
+  LIBS += $(LIBS_y)
+endif
+
+CFLAGS += @(EXTRA_CFLAGS)
+LDFLAGS += @(EXTRA_LDFLAGS)
+
+## Macros
+!cc = |> ^ CC %b^ @(CC) $(CFLAGS_y) $(CFLAGS) -c %f -o %o |>
+!ld = |> ^ LD %o^ @(CC) -o %o %f $(LDFLAGS_y) $(LDFLAGS) |>
+!xxd = |> ^ XD %f^ xxd -i %f > %o |>
+!cp = |> ^ CP %b^ cp %f %o |>

@@ -1,7 +1,7 @@
 #include "api.h"
-#include "util.h"
+#include "core/os.h"
 #include "core/ref.h"
-#include "core/platform.h"
+#include "core/util.h"
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -23,6 +23,7 @@ static int luax_meta__gc(lua_State* L) {
     destructorFn* destructor = (destructorFn*) lua_tocfunction(L, -1);
     if (destructor) {
       _lovrRelease(p->object, destructor);
+      p->object = NULL;
     }
   }
   return 0;
@@ -70,11 +71,15 @@ void _luax_registertype(lua_State* L, const char* name, const luaL_Reg* function
     luaL_register(L, NULL, functions);
   }
 
+  // :release function
+  lua_pushcfunction(L, luax_meta__gc);
+  lua_setfield(L, -2, "release");
+
   // Pop metatable
   lua_pop(L, 1);
 }
 
-void* _luax_totype(lua_State* L, int index, uint32_t hash) {
+void* _luax_totype(lua_State* L, int index, uint64_t hash) {
   Proxy* p = lua_touserdata(L, index);
 
   if (p && lua_type(L, index) != LUA_TLIGHTUSERDATA && p->hash == hash) {
@@ -84,7 +89,7 @@ void* _luax_totype(lua_State* L, int index, uint32_t hash) {
   return NULL;
 }
 
-void* _luax_checktype(lua_State* L, int index, uint32_t hash, const char* debug) {
+void* _luax_checktype(lua_State* L, int index, uint64_t hash, const char* debug) {
   void* object = _luax_totype(L, index, hash);
 
   if (!object) {
@@ -95,7 +100,7 @@ void* _luax_checktype(lua_State* L, int index, uint32_t hash, const char* debug)
 }
 
 // Registers the userdata on the top of the stack in the registry.
-void _luax_pushtype(lua_State* L, const char* type, uint32_t hash, void* object) {
+void _luax_pushtype(lua_State* L, const char* type, uint64_t hash, void* object) {
   if (!object) {
     lua_pushnil(L);
     return;
@@ -136,6 +141,7 @@ void _luax_pushtype(lua_State* L, const char* type, uint32_t hash, void* object)
   // Allocate userdata
   Proxy* p = (Proxy*) lua_newuserdata(L, sizeof(Proxy));
   luaL_getmetatable(L, type);
+  lovrAssert(lua_istable(L, -1), "Unknown type '%s' (maybe its module needs to be required)", type);
   lua_setmetatable(L, -2);
   lovrRetain(object);
   p->object = object;

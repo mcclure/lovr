@@ -1,0 +1,56 @@
+## LÖVR config
+# y is 'yes' and n is 'no'
+# Equal signs should not have spaces around them
+
+## Options
+# CC: The "C Compiler" to use.  Some common compilers are clang and gcc.
+# STRICT: Fail the build if there are any warnings.
+# DEBUG: Include debug symbols in the build, increasing file size.
+# OPTIMIZE: Make the executable faster and smaller, but compile slower.
+# SANITIZE: Add extra runtime checks to detect memory leaks and undefined behavior (adds overhead).
+# CMAKE_DEPS: Assume libraries were built by CMake in the `build` folder.
+# EXTRA_CFLAGS: Additional compiler flags (e.g. libraries, warnings).
+# EXTRA_LDFLAGS: Additional linker flags.
+# PLATFORM: The platform to compile for (win32, macos, linux, android, web, or blank to autodetect).
+CONFIG_CC=clang
+CONFIG_STRICT=y
+CONFIG_DEBUG=y
+CONFIG_OPTIMIZE=n
+CONFIG_SANITIZE=n
+CONFIG_CMAKE_DEPS=y
+CONFIG_EXTRA_CFLAGS=
+CONFIG_EXTRA_LDFLAGS=
+CONFIG_PLATFORM=
+
+## Modules
+# The set of enabled Lua modules.
+# Disabling unneeded modules will reduce executable size and improve compile times.
+CONFIG_AUDIO=y
+CONFIG_DATA=y
+CONFIG_EVENT=y
+CONFIG_FILESYSTEM=y
+CONFIG_GRAPHICS=y
+CONFIG_HEADSET=y
+CONFIG_MATH=y
+CONFIG_PHYSICS=y
+CONFIG_THREAD=y
+CONFIG_TIMER=y
+CONFIG_JSON=y
+CONFIG_ENET=y
+
+## Headset backends
+# Enabling headset backends adds support for more types of VR SDKs and hardware.
+# Some proprietary SDKs cannot be included in LÖVR, so the path to the SDK must be provided.
+CONFIG_SIMULATOR=y
+CONFIG_OPENVR=y
+CONFIG_OPENXR=n
+CONFIG_OCULUS=n
+CONFIG_VRAPI=n
+CONFIG_WEBVR=n
+CONFIG_LEAP=n
+CONFIG_OCULUS_PATH=
+CONFIG_LEAP_PATH=
+
+## OpenGL flavor
+# Can be GL, GLES, or WEBGL.  Ideally this should be autodetected though.
+CONFIG_GL=GL

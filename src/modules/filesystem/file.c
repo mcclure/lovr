@@ -1,6 +1,16 @@
 #include "filesystem/file.h"
-#include "util.h"
-#include <physfs.h>
+#include "filesystem/filesystem.h"
+#include "core/util.h"
+#include <stdlib.h>
+#include <string.h>
+
+// Currently only read operations are supported by File and all files are read into memory fully on open
+
+typedef struct {
+  uint8_t* data;
+  size_t offset;
+  size_t size;
+} FileInner;
 
 File* lovrFileInit(File* file ,const char* path) {
   file->path = path;
@@ -12,7 +22,7 @@ File* lovrFileInit(File* file ,const char* path) {
 void lovrFileDestroy(void* ref) {
   File* file = ref;
   if (file->handle) {
-    PHYSFS_close(file->handle);
+    lovrFileClose(ref);
   }
 }
 
@@ -20,42 +30,61 @@ bool lovrFileOpen(File* file, FileMode mode) {
   lovrAssert(!file->handle, "File is already open");
   file->mode = mode;
 
-  switch (mode) {
-    case OPEN_READ: file->handle = PHYSFS_openRead(file->path); break;
-    case OPEN_WRITE: file->handle = PHYSFS_openWrite(file->path); break;
-    case OPEN_APPEND: file->handle = PHYSFS_openAppend(file->path); break;
+  if (mode == OPEN_WRITE || mode == OPEN_APPEND)
+    return false;
+
+  FileInner *fileInner = malloc(sizeof(FileInner));
+  fileInner->offset = 0;
+  fileInner->data = lovrFilesystemRead(file->path, -1, &fileInner->size);
+  file->handle = fileInner;
+
+  if (!fileInner->data) {
+    fileInner->size = 0;
+    return false;
   }
 
-  return file->handle != NULL;
+  return true;
 }
 
 void lovrFileClose(File* file) {
   lovrAssert(file->handle, "File must be open to close it");
-  PHYSFS_close(file->handle);
+  FileInner *fileInner = (FileInner *)file->handle;
+  free(fileInner->data);
+  free(file->handle);
   file->handle = NULL;
 }
 
 size_t lovrFileRead(File* file, void* data, size_t bytes) {
   lovrAssert(file->handle && file->mode == OPEN_READ, "File must be open for reading");
-  return PHYSFS_readBytes(file->handle, data, bytes);
+  FileInner *fileInner = (FileInner *)file->handle;
+  if (fileInner->offset + bytes > fileInner->size)
+    return 0;
+  memcpy(data, fileInner->data + fileInner->offset, bytes);
+  fileInner->offset += bytes;
+  return bytes;
 }
 
 size_t lovrFileWrite(File* file, const void* data, size_t bytes) {
-  lovrAssert(file->handle && (file->mode == OPEN_WRITE || file->mode == OPEN_APPEND), "File must be open for writing");
-  return PHYSFS_writeBytes(file->handle, data, bytes);
+  lovrThrow("Writing not supported");
 }
 
 size_t lovrFileGetSize(File* file) {
   lovrAssert(file->handle, "File must be open to get its size");
-  return PHYSFS_fileLength(file->handle);
+  FileInner *fileInner = (FileInner *)file->handle;
+  return fileInner->size;
 }
 
 bool lovrFileSeek(File* file, size_t position) {
   lovrAssert(file->handle, "File must be open to seek");
-  return PHYSFS_seek(file->handle, position);
+  FileInner *fileInner = (FileInner *)file->handle;
+  if (position >= fileInner->size) // FIXME: Should seeking to fileInner->size exactly be allowed?
+    return false;
+  fileInner->offset = position;
+  return true;
 }
 
 size_t lovrFileTell(File* file) {
   lovrAssert(file->handle, "File must be open to tell");
-  return PHYSFS_tell(file->handle);
+  FileInner *fileInner = (FileInner *)file->handle;
+  return fileInner->offset;
 }
