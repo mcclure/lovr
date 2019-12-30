@@ -8,6 +8,7 @@ namespace "standard"
 --     speed: set to slow/speed all timeouts
 --     size: default size (diameter) of cubes
 --     color: default color of cubes (default 0.5, 0.5, 0.5)
+--     lineColor: default color of lines (if absent forward to color)
 --     shader: shader for cubes (default to shader.shader)
 --     onTop: if true default to ignoring depth
 --     duration: default time to expire (default 1, false means never timeout, true means 1 frame)
@@ -73,6 +74,8 @@ end
 function DebugCubes:doDraw(cubes)
 	local upTo = #cubes
 
+	-- Draw cubes first, then lines because lovr batching behavior is currently weird
+	-- Could also get optimal perf by turning blend mode to off
 	for i=1,upTo do
 		local t = cubes[i]
 
@@ -95,17 +98,19 @@ function DebugCubes:doDraw(cubes)
 			if not t then break end
 		end
 
-		-- Draw
-		lovr.graphics.setShader(self.shader)
-		local color = t.color or self.color
-		lovr.graphics.setColor(unpack(color))
+		-- Draw cube
 		if not t.noCube then
+			local color = t.color or self.color
+			lovr.graphics.setShader(self.shader)
+			lovr.graphics.setColor(unpack(color))
 			lovr.graphics.cube('fill', t.at.x, t.at.y, t.at.z, t.size or self.size, maybeUnpack(t.rotate))
 		end
-
+	end -- Draw line
+	for i,t in ipairs(cubes) do
 		if t.lineTo then
 			lovr.graphics.setShader()
-			if t.lineColor then lovr.graphics.setColor(unpack(t.lineColor)) end
+			local color = t.lineColor or self.lineColor or t.color or self.color
+			lovr.graphics.setColor(unpack(color))
 			lovr.graphics.line(t.at.x, t.at.y, t.at.z, t.lineTo:unpack())
 		end
 	end
