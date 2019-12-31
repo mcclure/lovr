@@ -1,6 +1,6 @@
+-- Convenience class for drawing lines and cubes (so you can "see" points of interest)
 namespace "standard"
 
--- Base class for an animation
 -- spec:
 --     cubes: {at=vec3, rotate=quat, color={r,g,b}, expire=time in seconds, size=diameter, lineTo=vec3, lineColor={r,g,b}}
 --            only "at" is required, also add "noCube=true" to suppress cube

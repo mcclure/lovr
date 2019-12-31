@@ -46,7 +46,7 @@ end)
 
 namespace "standard"
 
-local defaultApp = "app/test/rainbowHands"
+local defaultApp = "app/test/gesture"
 
 function lovr.load()
 	ent.root = LoaderEnt(#arg > 0 and arg or {defaultApp})

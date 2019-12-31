@@ -1,4 +1,4 @@
--- Show skeletons and finger movement
+-- Skeleton + finger movement tracer demo scene
 namespace "standard"
 
 local HandCubes = require "ent.debug.handCubes"

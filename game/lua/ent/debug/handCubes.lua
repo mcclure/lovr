@@ -3,21 +3,28 @@ namespace "standard"
 
 -- spec:
 --     updateColors() -- Called once per update at start, return color, linecolor
---     pointColors(handI, hand, points, pointI, point) -- Like updateColors, Called once per point
+--     handColors(handI, hand, points) -- Like updateColors, called once per hand
+--     pointColors(handI, hand, points, pointI, point) -- Like updateColors, called once per point
 --     onHand(handI, hand, points) -- Called once per update (pseudoevent)
 local HandCubes = classNamed("HandCubes", Ent)
 local DebugCubes = require "ent.debug.debugCubes"
 
-local skeletonSkeleton = {
+HandCubes.skeletonSkeleton = {
   [1]=2, -- Forearm
   [3]=1, [4]=3, [5]=4, [6]=5, [20]=6, -- Thumb
-  [7]=1, [8]=7, [9]=8, [21]=9, -- Index
-  [10]=1, [11]=10, [12]=11, [22]=12, -- Middle
-  [13]=1, [14]=13, [15]=14, [23]=15, -- Ring
+  [7]=1, [8]=7, [9]=8, [21]=9,        -- Index
+  [10]=1, [11]=10, [12]=11, [22]=12,  -- Middle
+  [13]=1, [14]=13, [15]=14, [23]=15,  -- Ring
   [16]=1, [17]=16, [18]=17, [19]=18, [24]=19 -- Pinky
 }
-local skeletonTipStart=20
-local floorSize = 20
+HandCubes.skeletonTipStart = 20
+HandCubes.skeletonFingers = {
+	{3, 4, 5, 6, 20}, -- Thumb
+	{7, 8, 9, 21},    -- Index
+	{10, 11, 12, 22}, -- Middle
+	{13, 14, 15, 23}, -- Ring
+	{17, 18, 19, 24}, -- Pinky
+}
 
 function HandCubes:onLoad()
 	self.cubes = DebugCubes{size=0.01}:insert(self)
@@ -35,12 +42,16 @@ function HandCubes:onUpdate()
 			end,
 			lovr.headset.hand.getPoints(controllerName)
 		)
+		local handCubeColor, tickLineColor = self.handColors and self:handColors(i, controllerName, points)
+		handCubeColor = handCubeColor or tickCubeColor
+		handLineColor = handLineColor or tickLineColor
+
 		for i2,at in ipairs(points) do
 			local cubeColor, lineColor = self.pointColors and self:pointColors(i, controllerName, points, i2, at)
-			cubeColor = cubeColor or tickCubeColor
-			lineColor = lineColor or tickLineColor or tickCubeColor
+			cubeColor = cubeColor or handCubeColor
+			lineColor = lineColor or handLineColor or handCubeColor
 
-			local lineToPt = skeletonSkeleton[i2]
+			local lineToPt = self.skeletonSkeleton[i2]
 			self.cubes:add(
 				{at=at.at, rotate=at.rotate, lineTo=lineToPt and points[lineToPt].at, color=cubeColor, lineColor=lineColor},
 				true
