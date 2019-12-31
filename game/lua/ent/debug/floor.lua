@@ -13,7 +13,6 @@ function Floor:onLoad()
 			local bright = (x+y)%2 == 0 and 0.5 or 0.75
 			local function sq(x) return x*x end
 			local alpha = math.min(1, (1-math.max(0, math.min(1, 2*math.sqrt(sq(0.5-x/(floorPixels-1))+sq(0.5-y/(floorPixels-1))))))*1.2)
-			print(x,y,bright,alpha)
 			data:setPixel(x,y,bright,bright,bright,alpha)
 		end
 	end
