@@ -10,6 +10,7 @@ local cubeTickRate=0.075
 
 function GestureTest:onLoad()
 	lovr.graphics.setBackgroundColor(0.95,0.975,1)
+	self.color = {0.75,0.75,0.75}
 	HandCubes.onLoad(self)
 	Floor():insert(self)
 	self.handData = {{curl={}},{curl={}}}

@@ -27,7 +27,7 @@ HandCubes.skeletonFingers = {
 }
 
 function HandCubes:onLoad()
-	self.cubes = DebugCubes{size=0.01}:insert(self)
+	self.cubes = DebugCubes{size=0.01, color=self.color}:insert(self)
 end
 
 function HandCubes:onUpdate()
