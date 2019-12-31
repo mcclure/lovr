@@ -19,7 +19,7 @@ HandCubes.skeletonSkeleton = {
 }
 HandCubes.skeletonTipStart = 20
 HandCubes.skeletonFingers = {
-	{3, 4, 5, 6, 20}, -- Thumb
+	{4, 5, 6, 20}, -- Thumb
 	{7, 8, 9, 21},    -- Index
 	{10, 11, 12, 22}, -- Middle
 	{13, 14, 15, 23}, -- Ring
@@ -31,7 +31,9 @@ function HandCubes:onLoad()
 end
 
 function HandCubes:onUpdate()
-	local tickCubeColor, tickLineColor = self.updateColors and self:updateColors()
+	local tickCubeColor, tickLineColor
+	if self.updateColors then tickCubeColor, tickLineColor = self:updateColors() end
+
 	for i,controllerName in ipairs(lovr.headset.getHands()) do
 		local handAt = Loc(unpackPose(controllerName))
 
@@ -42,18 +44,21 @@ function HandCubes:onUpdate()
 			end,
 			lovr.headset.hand.getPoints(controllerName)
 		)
-		local handCubeColor, tickLineColor = self.handColors and self:handColors(i, controllerName, points)
+
+		local handCubeColor, handLineColor
+		if self.handColors then handCubeColor, handLineColor = self:handColors(i, controllerName, points) end
 		handCubeColor = handCubeColor or tickCubeColor
 		handLineColor = handLineColor or tickLineColor
 
 		for i2,at in ipairs(points) do
-			local cubeColor, lineColor = self.pointColors and self:pointColors(i, controllerName, points, i2, at)
-			cubeColor = cubeColor or handCubeColor
-			lineColor = lineColor or handLineColor or handCubeColor
+			local pointCubeColor, pointLineColor
+			if self.pointColors then pointCubeColor, pointLineColor = self:pointColors(i, controllerName, points, i2, at) end
+			pointCubeColor = pointCubeColor or handCubeColor
+			pointLineColor = pointLineColor or handLineColor
 
 			local lineToPt = self.skeletonSkeleton[i2]
 			self.cubes:add(
-				{at=at.at, rotate=at.rotate, lineTo=lineToPt and points[lineToPt].at, color=cubeColor, lineColor=lineColor},
+				{at=at.at, rotate=at.rotate, lineTo=lineToPt and points[lineToPt].at, color=pointCubeColor, lineColor=pointLineColor},
 				true
 			)
 		end

@@ -5,12 +5,13 @@ local HandCubes = require "ent.debug.handCubes"
 local Floor = require "ent.debug.floor"
 local GestureTest = classNamed("GestureTest", HandCubes)
 
-local gray = {0.5,0.5,0.5}
+local lightgray = {0.75,0.75,0.75}
 local cubeTickRate=0.075
+local fingerHighlight = true
 
 function GestureTest:onLoad()
 	lovr.graphics.setBackgroundColor(0.95,0.975,1)
-	self.color = {0.75,0.75,0.75}
+	self.color = lightgray
 	HandCubes.onLoad(self)
 	Floor():insert(self)
 	self.handData = {{curl={}},{curl={}}}
@@ -31,25 +32,59 @@ function GestureTest:handColors(handI, hand, points)
 			local at_0 = points[joints[i2]].at
 			local at_1 = points[joints[i2-1]].at
 			local at_2 = points[joints[i2-2]].at
-			curl = curl + (at_1-at_0):dot(at_2-at_1)
+			curl = curl + (at_0-at_1):dot(at_1-at_2)
 		end
 		hand.curl[i] = curl
+	end
+
+	local thumb = HandCubes.skeletonFingers[1]
+	local index = HandCubes.skeletonFingers[2]
+	local indexN = #index
+	local gunPoint = points[thumb[#thumb]].at-points[thumb[1]].at
+	hand.gunClick = 0
+	for i=2,indexN do
+		local at_0 = points[index[i]].at
+		local at_1 = points[index[i-1]].at
+		hand.gunClick = hand.gunClick + (at_0-at_1):dot(gunPoint)
 	end
 end
 
 function GestureTest:onDraw()
 	for i,hand in ipairs(self.handData) do
 		self.screenTransforms[i]:push()
-		lovr.graphics.translate(0,1,0)
+		lovr.graphics.translate(0,1.5,0)
 		lovr.graphics.scale(0.25)
 
+		-- Name
 		local str = (self.handData.name or "(nil)") .. "\n"
 		for i2,curl in ipairs(hand.curl) do
 			str = string.format("%s\n%d: %.06f", str, i2, curl)
 		end
+		str = string.format("%s\n\nFingergun: %.06f", str, hand.gunClick)
 		lovr.graphics.print(str)
 		
 		lovr.graphics.pop()
+	end
+end
+
+-- Only relevant when fingerHighlight on
+function GestureTest:pointColors(handI, hand, points, pointI, point)
+	if fingerHighlight then
+		if not self.whichFingerColor then
+			self.whichFingerColor = {{1,0,1}, {0,1,1}, {0.5,0,1}, {0,1,0.5}, {1,0.3647,0.7176}} --Thumb=magenta, Index=cyan, Middle=purple, Ring=lime, Pinky=pink
+			self.whichFinger = {}
+			for i,joints in ipairs(HandCubes.skeletonFingers) do
+				for i2, joint in ipairs(joints) do
+					self.whichFinger[joint] = i
+				end
+			end
+		end
+		local which = self.whichFinger[pointI]
+		local color = which and self.whichFingerColor[which]
+		if color then
+			local from = self.whichFinger[self.skeletonSkeleton[pointI]]
+			return color, from and color or lightgray
+		end
 	end
 end
 
