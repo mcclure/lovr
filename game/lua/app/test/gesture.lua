@@ -5,7 +5,7 @@ local HandCubes = require "ent.debug.handCubes"
 local Floor = require "ent.debug.floor"
 local GestureTest = classNamed("GestureTest", HandCubes)
 
-local lightgray = {0.75,0.75,0.75}
+local lightgray = {0.85,0.85,0.85}
 local cubeTickRate=0.075
 local fingerHighlight = true
 
@@ -14,7 +14,10 @@ function GestureTest:onLoad()
 	self.color = lightgray
 	HandCubes.onLoad(self)
 	Floor():insert(self)
+
 	self.handData = {{curl={}},{curl={}}}
+
+	-- Positioning for infoboxes
 	local baseTransform = Loc(vec3(0,0,2)):precompose(Loc(nil, quat.from_angle_axis(math.pi, 0,1,0)))
 	self.screenTransforms = {
 		baseTransform:compose(Loc(nil, quat.from_angle_axis(math.pi + math.pi/4, 0,1,0))),
@@ -22,9 +25,13 @@ function GestureTest:onLoad()
 	}
 end
 
-function GestureTest:handColors(handI, hand, points)
+function GestureTest:handColors(handI, handName, points)
+	-- Calculate gesture proxies. Do this here in case we want to establish a color based on gesture
 	local hand = self.handData[handI]
-	if not hand.name then hand.name = hand end
+
+	if not hand.name then hand.name = handName end
+
+	-- Curl
 	for i,joints in ipairs(HandCubes.skeletonFingers) do
 		local curl = 0
 		local jointsN = #joints
@@ -37,16 +44,18 @@ function GestureTest:handColors(handI, hand, points)
 		hand.curl[i] = curl
 	end
 
+	-- Thumb/index alignment
 	local thumb = HandCubes.skeletonFingers[1]
 	local index = HandCubes.skeletonFingers[2]
 	local indexN = #index
 	local gunPoint = points[thumb[#thumb]].at-points[thumb[1]].at
-	hand.gunClick = 0
+	local gunClick = 0
 	for i=2,indexN do
 		local at_0 = points[index[i]].at
 		local at_1 = points[index[i-1]].at
-		hand.gunClick = hand.gunClick + (at_0-at_1):dot(gunPoint)
+		gunClick = gunClick + (at_0-at_1):dot(gunPoint)
 	end
+	hand.gunClick = gunClick
 end
 
 function GestureTest:onDraw()
@@ -56,11 +65,11 @@ function GestureTest:onDraw()
 		lovr.graphics.scale(0.25)
 
 		-- Name
-		local str = (self.handData.name or "(nil)") .. "\n"
+		local str = (hand.name or "(nil)") .. "\n"
 		for i2,curl in ipairs(hand.curl) do
-			str = string.format("%s\n%d: %.06f", str, i2, curl)
+			str = string.format("%s\n%d: %.07f", str, i2, curl)
 		end
-		str = string.format("%s\n\nFingergun: %.06f", str, hand.gunClick)
+		str = string.format("%s\n\nFingergun: %.07f", str, hand.gunClick)
 		lovr.graphics.print(str)
 		
 		lovr.graphics.pop()
@@ -69,7 +78,7 @@ end
 
 -- Only relevant when fingerHighlight on
 function GestureTest:pointColors(handI, hand, points, pointI, point)
-	if fingerHighlight then
+	if fingerHighlight then -- Mark joints used for gesture calc
 		if not self.whichFingerColor then
 			self.whichFingerColor = {{1,0,1}, {0,1,1}, {0.5,0,1}, {0,1,0.5}, {1,0.3647,0.7176}} --Thumb=magenta, Index=cyan, Middle=purple, Ring=lime, Pinky=pink
 			self.whichFinger = {}
