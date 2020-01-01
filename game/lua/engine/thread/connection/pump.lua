@@ -21,7 +21,7 @@ end
 
 function PumpEnt:insert(parent)
 	self.thread = lovr.thread.newThread(self.boot)
-	self.thread:start()
+	self.thread:start(self.tag)
 
 	self.boot = nil
 	Ent.insert(self, parent)
@@ -30,8 +30,10 @@ end
 function PumpEnt:connect()
 	if ent.singleThread then error("Doing thread ops but threading is disabled...") end
 	if not self.channelSend then
-		self.channelSend = lovr.thread.getChannel(self.name.."-up")
-		self.channelRecv = lovr.thread.getChannel(self.name.."-dn")
+		local name = stringTag(self.name, self.tag)
+
+		self.channelSend = lovr.thread.getChannel(name.."-up")
+		self.channelRecv = lovr.thread.getChannel(name.."-dn")
 		self.responseHandlers = Queue()
 	end
 	return self.channelSend, self.channelRecv

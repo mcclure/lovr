@@ -95,6 +95,11 @@ function classNamed(name, parent) -- create dynalloc class with name
 	return cls
 end
 
+function stringTag(s, tag)
+	if tag then return s .. "-" .. tag end
+	return s
+end
+
 function lovrRequire(module) -- call with for example lovrRequire("thread") to load lovr.thread, if you might be in a file
 	local callerNamespace = getfenv(2)
 	local lovrTable = callerNamespace.lovr

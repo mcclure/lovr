@@ -12,9 +12,10 @@ local Pump = classNamed("Loader")
 --     handler: map of message name -> {num args, function}
 function Pump:_init(spec)
 	pull(self, spec)
+	local name = stringTag(self.name, self.tag)
 
-	self.channelSend = self.channelSend or lovr.thread.getChannel(self.name.."-dn")
-	self.channelRecv = self.channelRecv or lovr.thread.getChannel(self.name.."-up")
+	self.channelSend = self.channelSend or lovr.thread.getChannel(name.."-dn")
+	self.channelRecv = self.channelRecv or lovr.thread.getChannel(name.."-up")
 end
 local skate = require "ext.skategirl"
 function Pump:run()
