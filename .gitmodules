@@ -22,3 +22,12 @@
 [submodule "deps/luajit"]
 	path = deps/luajit
 	url = https://github.com/WohlSoft/LuaJIT
+[submodule "deps/portaudio"]
+	path = deps/portaudio
+	url = git://git.assembla.com/portaudio.git
+[submodule "deps/portaudio_opensles"]
+	path = deps/portaudio_opensles
+	url = https://github.com/Gundersanne/portaudio_opensles.git
+[submodule "deps/rtmidi"]
+	path = deps/rtmidi
+	url = https://github.com/thestk/rtmidi.git
