@@ -33,7 +33,7 @@ function GestureTest:onLoad()
 	} })
 	self.shader:send("lovrLightDirection", {-1,-1,-1})
 	self.shader:send("lovrLightColor", {1,1,1,2})
-	self.canBaseAt = vec3(0,1,-2)
+	self.canBaseAt = vec3(-1,1,-2)
 	self.postRad = 0.2
 	self.canScale = 1/1000
 	self.canOrient = {math.pi/2, 1,0,0}
@@ -51,10 +51,8 @@ function GestureTest:onLoad()
 	local canBox = {}
 	canBox.minx, canBox.maxx, canBox.miny, canBox.maxy, canBox.minz, canBox.maxz = self.canModel:getAABB()
 	for k,v in pairs(canBox) do canBox[k] = v * self.canScale end
-	print(canBox.minx, canBox.maxx, canBox.miny, canBox.maxy, canBox.minz, canBox.maxz)
 	local canHeight, canRadius = canBox.maxy-canBox.miny, (canBox.maxx-canBox.minx)/2
 	self.canCenter = -(vec3(canBox.maxx, canBox.maxy, canBox.maxz) + vec3(canBox.minx, canBox.miny, canBox.minz))/2 / self.canScale
-	print(self.canCenter:unpack())
 	self.canDebug = {canHeight, canRadius}
 	self.can = self.world:newCylinderCollider(self.canBaseAt.x, self.canBaseAt.y + canHeight, self.canBaseAt.z, canRadius, canHeight) -- Can
 	self.can:setOrientation(unpack(self.canOrient))
@@ -62,12 +60,16 @@ function GestureTest:onLoad()
 	-- Positioning for infoboxes
 	local baseTransform = Loc(vec3(0,0,2)):precompose(Loc(nil, quat.from_angle_axis(math.pi, 0,1,0)))
 	self.screenTransforms = {
-		baseTransform:compose(Loc(nil, quat.from_angle_axis(math.pi + math.pi/4, 0,1,0))),
+		baseTransform:compose(Loc(nil, quat.from_angle_axis(math.pi + math.pi/2, 0,1,0))),
 		baseTransform:compose(Loc(nil, quat.from_angle_axis(math.pi + -math.pi/4, 0,1,0))),
 	}
 end
 
+--local tt = 0
 function GestureTest:onUpdate(dt)
+	--if tt then tt = tt + dt if tt > 3 then self.cowbellSound:play() self.can:applyForce(0, 0, 300, 0,0,0) tt = nil end end
+	HandCubes.onUpdate(self, dt)
+	if dt > 0.1 then dt = 0.1 end
 	for i=1,3 do
 		self.world:update(dt/3)
 	end
@@ -122,11 +124,27 @@ function GestureTest:handColors(handI, handName, points)
 	hand.cocked = not hand.trigger and ( (gunGesture and wasCocked) or canCock )
 	hand.cockState = canFire and 3 or (canCock and 2 or 1)
 
-	if hand.trigger and handI==2 then -- KLUDGE: for now ignore left hand
+	if hand.trigger then -- KLUDGE: for now ignore left hand
 		local indexRoot = points[index[1]].at
 		local indexTip = points[index[#index]].at
+		local indexTo = indexTip + (indexTip-indexRoot)*30
 		self.bangSound:play()
-		self.cubes:add{at=indexTip, lineTo=indexTip + (indexTip-indexRoot)*30, lineColor=crayon.red, noCube=true}
+		self.world:raycast(indexRoot.x, indexRoot.y, indexRoot.z, indexTo.x, indexTo.y, indexTo.z, function(shape, x, y, z, nx, ny, nz)
+			local collider = shape:getCollider()
+			if collider == self.can then
+				local zap = vec3(nx, ny, nz):normalize()
+				zap.y = 1
+				zap = zap:normalize() * 2000
+				local push = vec3.zero--vec3(x,y,z)
+				print("input", nx,ny,nz)
+				print("ZAP", zap.x, zap.y, zap.z, push:unpack())
+				collider:setAwake(true)
+				collider:applyForce(zap.x, zap.y, zap.z, push:unpack())
+				self.cowbellSound:play()
+			end
+		end)
+
+		self.cubes:add{at=indexTip, lineTo=indexTo, lineColor=crayon.red, noCube=true}
 	end
 	if hand.fire then
 		return crayon.red
