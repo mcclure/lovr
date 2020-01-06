@@ -10,7 +10,6 @@
 #include "data/modelData.h"
 #include "data/rasterizer.h"
 #include "data/textureData.h"
-#include "filesystem/filesystem.h"
 #include "core/arr.h"
 #include "core/ref.h"
 #include <math.h>
@@ -343,6 +342,10 @@ static int l_lovrGraphicsCreateWindow(lua_State* L) {
   flags.fullscreen = lua_toboolean(L, -1);
   lua_pop(L, 1);
 
+  lua_getfield(L, 1, "resizable");
+  flags.resizable = lua_toboolean(L, -1);
+  lua_pop(L, 1);
+
   lua_getfield(L, 1, "msaa");
   flags.msaa = lua_tointeger(L, -1);
   lua_pop(L, 1);
@@ -408,8 +411,8 @@ static int l_lovrGraphicsTick(lua_State* L) {
 static int l_lovrGraphicsTock(lua_State* L) {
   lovrGraphicsFlush();
   const char* label = luaL_checkstring(L, 1);
-  lovrGraphicsTock(label);
-  return 0;
+  lua_pushnumber(L, lovrGraphicsTock(label));
+  return 1;
 }
 
 static int l_lovrGraphicsGetFeatures(lua_State* L) {
@@ -460,13 +463,6 @@ static int l_lovrGraphicsGetStats(lua_State* L) {
   lua_setfield(L, 1, "drawcalls");
   lua_pushinteger(L, stats->shaderSwitches);
   lua_setfield(L, 1, "shaderswitches");
-  lua_createtable(L, 0, (int) stats->timers.length);
-  for (size_t i = 0; i < stats->timers.length; i++) {
-    lua_pushstring(L, stats->timers.data[i].label);
-    lua_pushnumber(L, stats->timers.data[i].time);
-    lua_settable(L, -3);
-  }
-  lua_setfield(L, 1, "timers");
   return 1;
 }
 
@@ -544,6 +540,25 @@ static int l_lovrGraphicsSetColor(lua_State* L) {
   Color color;
   luax_readcolor(L, 1, &color);
   lovrGraphicsSetColor(color);
+  return 0;
+}
+
+static int l_lovrGraphicsGetColorMask(lua_State* L) {
+  bool r, b, g, a;
+  lovrGraphicsGetColorMask(&r, &g, &b, &a);
+  lua_pushboolean(L, r);
+  lua_pushboolean(L, g);
+  lua_pushboolean(L, b);
+  lua_pushboolean(L, a);
+  return 4;
+}
+
+static int l_lovrGraphicsSetColorMask(lua_State* L) {
+  bool r = lua_toboolean(L, 1);
+  bool g = lua_toboolean(L, 2);
+  bool b = lua_toboolean(L, 3);
+  bool a = lua_toboolean(L, 4);
+  lovrGraphicsSetColorMask(r, g, b, a);
   return 0;
 }
 
@@ -953,7 +968,11 @@ static int l_lovrGraphicsStencil(lua_State* L) {
     lovrGraphicsClear(NULL, NULL, &clearTo);
   }
   lua_settop(L, 1);
+  bool r, g, b, a;
+  lovrGraphicsGetColorMask(&r, &g, &b, &a);
+  lovrGraphicsSetColorMask(false, false, false, false);
   lovrGraphicsStencil(action, replaceValue, stencilCallback, L);
+  lovrGraphicsSetColorMask(r, g, b, a);
   return 0;
 }
 
@@ -1368,8 +1387,10 @@ static int l_lovrGraphicsNewModel(lua_State* L) {
 
   if (!modelData) {
     Blob* blob = luax_readblob(L, 1, "Model");
-    modelData = lovrModelDataCreate(blob);
+    modelData = lovrModelDataCreate(blob, luax_readfile);
     lovrRelease(Blob, blob);
+  } else {
+    lovrRetain(modelData);
   }
 
   Model* model = lovrModelCreate(modelData);
@@ -1379,29 +1400,25 @@ static int l_lovrGraphicsNewModel(lua_State* L) {
   return 1;
 }
 
-static void luax_readshadersource(lua_State* L, int index) {
+static const char* luax_checkshadersource(lua_State* L, int index) {
   if (lua_isnoneornil(L, index)) {
-    return;
+    return NULL;
   }
 
   Blob* blob = luax_totype(L, index, Blob);
   if (blob) {
-    lua_pushlstring(L, blob->data, blob->size);
-    lua_replace(L, index);
-    return;
+    return blob->data;
   }
 
-  const char* source = luaL_checkstring(L, index);
-  if (!lovrFilesystemIsFile(source)) {
-    return;
+  size_t length;
+  const char* source = luaL_checklstring(L, index, &length);
+  if (memchr(source, '\n', MIN(1024, length))) {
+    return source;
+  } else {
+    void* contents = luax_readfile(source, &length);
+    lovrAssert(contents, "Could not read shader from file '%s'", source);
+    return contents;
   }
-
-  size_t bytesRead;
-  char* contents = lovrFilesystemRead(source, -1, &bytesRead);
-  lovrAssert(bytesRead > 0, "Could not read shader from file '%s'", source);
-  lua_pushlstring(L, contents, bytesRead);
-  lua_replace(L, index);
-  free(contents);
 }
 
 #define MAX_SHADER_FLAGS 32
@@ -1471,17 +1488,15 @@ static int l_lovrGraphicsNewShader(lua_State* L) {
       lovrShaderSetFloats(shader, "lovrLightColor", (float[4]) { 1.f, 1.f, 1.f, 1.f }, 0, 4);
     }
   } else {
-    luax_readshadersource(L, 1);
-    luax_readshadersource(L, 2);
-    const char* vertexSource = lua_tostring(L, 1);
-    const char* fragmentSource = lua_tostring(L, 2);
+    const char* vertexSource = luax_checkshadersource(L, 1);
+    const char* fragmentSource = luax_checkshadersource(L, 2);
 
     if (lua_istable(L, 3)) {
       lua_getfield(L, 3, "flags");
       luax_parseshaderflags(L, -1, flags, &flagCount);
       lua_pop(L, 1);
 
-      lua_getfield(L, 2, "stereo");
+      lua_getfield(L, 3, "stereo");
       multiview = lua_isnil(L, -1) ? multiview : lua_toboolean(L, -1);
       lua_pop(L, 1);
     }
@@ -1495,8 +1510,7 @@ static int l_lovrGraphicsNewShader(lua_State* L) {
 }
 
 static int l_lovrGraphicsNewComputeShader(lua_State* L) {
-  luax_readshadersource(L, 1);
-  const char* source = lua_tostring(L, 1);
+  const char* source = luax_checkshadersource(L, 1);
   ShaderFlag flags[MAX_SHADER_FLAGS];
   uint32_t flagCount = 0;
 
@@ -1627,6 +1641,8 @@ static const luaL_Reg lovrGraphics[] = {
   { "setCanvas", l_lovrGraphicsSetCanvas },
   { "getColor", l_lovrGraphicsGetColor },
   { "setColor", l_lovrGraphicsSetColor },
+  { "getColorMask", l_lovrGraphicsGetColorMask },
+  { "setColorMask", l_lovrGraphicsSetColorMask },
   { "isCullingEnabled", l_lovrGraphicsIsCullingEnabled },
   { "setCullingEnabled", l_lovrGraphicsSetCullingEnabled },
   { "getDefaultFilter", l_lovrGraphicsGetDefaultFilter },

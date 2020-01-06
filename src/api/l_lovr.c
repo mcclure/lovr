@@ -1,6 +1,6 @@
 #include "api.h"
-#include "util.h"
-#include "platform.h"
+#include "core/os.h"
+#include "core/util.h"
 #include "lib/lua-cjson/lua_cjson.h"
 #include "lib/lua-enet/enet.h"
 

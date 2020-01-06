@@ -224,7 +224,7 @@ void lovrGraphicsCreateWindow(WindowFlags* flags) {
   lovrPlatformOnWindowClose(onCloseWindow);
   lovrPlatformOnWindowResize(onResizeWindow);
   lovrPlatformGetFramebufferSize(&state.width, &state.height);
-  lovrGpuInit(lovrGetProcAddress);
+  lovrGpuInit(lovrPlatformGetProcAddress);
 
   state.defaultCanvas = lovrCanvasCreateFromHandle(state.width, state.height, (CanvasFlags) { .stereo = false }, 0, 0, 0, 1, true);
 
@@ -284,6 +284,10 @@ float lovrGraphicsGetPixelDensity() {
   }
 }
 
+const Camera* lovrGraphicsGetCamera() {
+  return &state.camera;
+}
+
 void lovrGraphicsSetCamera(Camera* camera, bool clear) {
   lovrGraphicsFlush();
 
@@ -330,12 +334,13 @@ void lovrGraphicsReset() {
   lovrGraphicsSetBlendMode(BLEND_ALPHA, BLEND_ALPHA_MULTIPLY);
   lovrGraphicsSetCanvas(NULL);
   lovrGraphicsSetColor((Color) { 1, 1, 1, 1 });
+  lovrGraphicsSetColorMask(true, true, true, true);
   lovrGraphicsSetCullingEnabled(false);
   lovrGraphicsSetDefaultFilter((TextureFilter) { .mode = FILTER_TRILINEAR });
   lovrGraphicsSetDepthTest(COMPARE_LEQUAL, true);
   lovrGraphicsSetFont(NULL);
-  lovrGraphicsSetLineWidth(1);
-  lovrGraphicsSetPointSize(1);
+  lovrGraphicsSetLineWidth(1.f);
+  lovrGraphicsSetPointSize(1.f);
   lovrGraphicsSetShader(NULL);
   lovrGraphicsSetStencilTest(COMPARE_NONE, 0);
   lovrGraphicsSetWinding(WINDING_COUNTERCLOCKWISE);
@@ -395,6 +400,17 @@ void lovrGraphicsSetColor(Color color) {
   gammaCorrect(&state.linearColor);
 }
 
+void lovrGraphicsGetColorMask(bool* r, bool* g, bool* b, bool* a) {
+  *r = state.pipeline.colorMask & 0x8;
+  *g = state.pipeline.colorMask & 0x4;
+  *b = state.pipeline.colorMask & 0x2;
+  *a = state.pipeline.colorMask & 0x1;
+}
+
+void lovrGraphicsSetColorMask(bool r, bool g, bool b, bool a) {
+  state.pipeline.colorMask = (r << 3) | (g << 2) | (b << 1) | a;
+}
+
 bool lovrGraphicsIsCullingEnabled() {
   return state.pipeline.culling;
 }
@@ -445,7 +461,7 @@ float lovrGraphicsGetLineWidth() {
   return state.pipeline.lineWidth;
 }
 
-void lovrGraphicsSetLineWidth(uint8_t width) {
+void lovrGraphicsSetLineWidth(float width) {
   state.pipeline.lineWidth = width;
 }
 
@@ -1156,7 +1172,7 @@ void lovrGraphicsSphere(Material* material, mat4 transform, int segments) {
       for (int j = 0; j < segments; j++) {
         uint16_t i0 = offset0 + j;
         uint16_t i1 = offset1 + j;
-        memcpy(indices, ((uint16_t[]) { i0, i1, i0 + 1, i1, i1 + 1, i0 + 1 }), 6 * sizeof(uint16_t));
+        memcpy(indices, ((uint16_t[]) { i0, i0 + 1, i1, i1, i0 + 1, i1 + 1 }), 6 * sizeof(uint16_t));
         indices += 6;
       }
     }
@@ -1197,15 +1213,15 @@ void lovrGraphicsSkybox(Texture* texture) {
 
 void lovrGraphicsPrint(const char* str, size_t length, mat4 transform, float wrap, HorizontalAlign halign, VerticalAlign valign) {
   float width;
+  float height;
   uint32_t lineCount;
   uint32_t glyphCount;
   Font* font = lovrGraphicsGetFont();
-  lovrFontMeasure(font, str, length, wrap, &width, &lineCount, &glyphCount);
+  lovrFontMeasure(font, str, length, wrap, &width, &height, &lineCount, &glyphCount);
 
-  float scale = 1.f / font->pixelDensity;
-  float offsetY = ((lineCount + 1) * font->rasterizer->height * font->lineHeight) * (valign / 2.f) * (font->flip ? -1 : 1);
+  float scale = 1.f / lovrFontGetPixelDensity(font);
   mat4_scale(transform, scale, scale, scale);
-  mat4_translate(transform, 0.f, offsetY, 0.f);
+  mat4_translate(transform, 0.f, height * (valign / 2.f), 0.f);
 
   Pipeline pipeline = state.pipeline;
   pipeline.blendMode = pipeline.blendMode == BLEND_NONE ? BLEND_ALPHA : pipeline.blendMode;
@@ -1219,7 +1235,7 @@ void lovrGraphicsPrint(const char* str, size_t length, mat4 transform, float wra
     .shader = SHADER_FONT,
     .pipeline = &pipeline,
     .transform = transform,
-    .texture = font->texture,
+    .texture = lovrFontGetTexture(font),
     .vertexCount = glyphCount * 4,
     .indexCount = glyphCount * 6,
     .vertices = &vertices,

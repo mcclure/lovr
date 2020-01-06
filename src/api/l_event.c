@@ -1,9 +1,9 @@
 #include "api.h"
-#include "util.h"
 #include "event/event.h"
 #include "thread/thread.h"
-#include "core/platform.h"
+#include "core/os.h"
 #include "core/ref.h"
+#include "core/util.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -61,10 +61,11 @@ void luax_checkvariant(lua_State* L, int index, Variant* variant) {
 
       variant->value.object.pointer = proxy->object;
       lovrRetain(proxy->object);
+      lua_pop(L, 1);
       break;
 
     default:
-      lovrThrow("Bad variant type: %s", lua_typename(L, type));
+      lovrThrow("Bad variant type for argument %d: %s", index, lua_typename(L, type));
       return;
   }
 }
@@ -75,7 +76,7 @@ int luax_pushvariant(lua_State* L, Variant* variant) {
     case TYPE_BOOLEAN: lua_pushboolean(L, variant->value.boolean); return 1;
     case TYPE_NUMBER: lua_pushnumber(L, variant->value.number); return 1;
     case TYPE_STRING: lua_pushstring(L, variant->value.string); return 1;
-    case TYPE_OBJECT: _luax_pushtype(L, variant->value.object.type, hash(variant->value.object.type), variant->value.object.pointer); return 1;
+    case TYPE_OBJECT: _luax_pushtype(L, variant->value.object.type, hash64(variant->value.object.type, strlen(variant->value.object.type)), variant->value.object.pointer); return 1;
     default: return 0;
   }
 }

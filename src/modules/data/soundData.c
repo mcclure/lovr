@@ -1,5 +1,5 @@
 #include "data/soundData.h"
-#include "util.h"
+#include "core/util.h"
 #include "lib/stb/stb_vorbis.h"
 #include <limits.h>
 #include <stdlib.h>

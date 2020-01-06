@@ -4,11 +4,14 @@
 /build.sh
 /watch.sh
 /debug.sh
+/db
 /lovr
 build
 build-*
+/libs
 bin
 /data
 /*.lua
 .DS_Store
+.vs
 /test

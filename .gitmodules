@@ -19,9 +19,9 @@
 [submodule "deps/openvr"]
 	path = deps/openvr
 	url = https://github.com/ValveSoftware/openvr
-[submodule "deps/physfs"]
-	path = deps/physfs
-	url = https://github.com/Didstopia/physfs.git
 [submodule "deps/luajit"]
 	path = deps/luajit
 	url = https://github.com/WohlSoft/LuaJIT
+[submodule "deps/openxr"]
+	path = deps/openxr
+	url = https://github.com/khronosgroup/openxr-sdk

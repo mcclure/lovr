@@ -33,8 +33,6 @@ const char* Devices[] = {
   [DEVICE_HEAD] = "head",
   [DEVICE_HAND_LEFT] = "hand/left",
   [DEVICE_HAND_RIGHT] = "hand/right",
-  [DEVICE_EYE_LEFT] = "eye/left",
-  [DEVICE_EYE_RIGHT] = "eye/right",
   NULL
 };
 
@@ -56,37 +54,7 @@ const char* DeviceAxes[] = {
   [AXIS_TRIGGER] = "trigger",
   [AXIS_THUMBSTICK] = "thumbstick",
   [AXIS_TOUCHPAD] = "touchpad",
-  [AXIS_PINCH] = "pinch",
   [AXIS_GRIP] = "grip",
-  NULL
-};
-
-const char* DeviceBones[] = {
-  [BONE_THUMB] = "thumb",
-  [BONE_INDEX] = "index",
-  [BONE_MIDDLE] = "middle",
-  [BONE_RING] = "ring",
-  [BONE_PINKY] = "pinky",
-  [BONE_THUMB_NULL] = "thumb/null",
-  [BONE_THUMB_1] = "thumb/1",
-  [BONE_THUMB_2] = "thumb/2",
-  [BONE_THUMB_3] = "thumb/3",
-  [BONE_INDEX_1] = "index/1",
-  [BONE_INDEX_2] = "index/2",
-  [BONE_INDEX_3] = "index/3",
-  [BONE_INDEX_4] = "index/4",
-  [BONE_MIDDLE_1] = "middle/1",
-  [BONE_MIDDLE_2] = "middle/2",
-  [BONE_MIDDLE_3] = "middle/3",
-  [BONE_MIDDLE_4] = "middle/4",
-  [BONE_RING_1] = "ring/1",
-  [BONE_RING_2] = "ring/2",
-  [BONE_RING_3] = "ring/3",
-  [BONE_RING_4] = "ring/4",
-  [BONE_PINKY_1] = "pinky/1",
-  [BONE_PINKY_2] = "pinky/2",
-  [BONE_PINKY_3] = "pinky/3",
-  [BONE_PINKY_4] = "pinky/4",
   NULL
 };
 
@@ -406,10 +374,9 @@ int l_lovrHeadsetIsTouched(lua_State* L) {
 
 static const int axisCounts[MAX_AXES] = {
   [AXIS_TRIGGER] = 1,
-  [AXIS_PINCH] = 1,
-  [AXIS_GRIP] = 1,
   [AXIS_THUMBSTICK] = 2,
-  [AXIS_TOUCHPAD] = 2
+  [AXIS_TOUCHPAD] = 2,
+  [AXIS_GRIP] = 1
 };
 
 int l_lovrHeadsetGetAxis(lua_State* L) {
@@ -465,30 +432,6 @@ int l_lovrHeadsetNewModel(lua_State* L) {
   }
 
   return 0;
-}
-
-int l_lovrHeadsetGetBonePose(lua_State* L) {
-  Device device = luax_optdevice(L, 1);
-  DeviceBone bone = luaL_checkoption(L, 2, NULL, DeviceBones);
-  float position[4], orientation[4];
-  FOREACH_TRACKING_DRIVER(driver) {
-    if (driver->getBonePose(device, bone, position, orientation)) {
-      float angle, ax, ay, az;
-      quat_getAngleAxis(orientation, &angle, &ax, &ay, &az);
-      lua_pushnumber(L, position[0]);
-      lua_pushnumber(L, position[1]);
-      lua_pushnumber(L, position[2]);
-      lua_pushnumber(L, angle);
-      lua_pushnumber(L, ax);
-      lua_pushnumber(L, ay);
-      lua_pushnumber(L, az);
-      return 7;
-    }
-  }
-  for (int i = 0; i < 7; i++) {
-    lua_pushnumber(L, 0.);
-  }
-  return 7;
 }
 
 static int l_lovrHeadsetRenderTo(lua_State* L) {
@@ -584,7 +527,6 @@ static const luaL_Reg lovrHeadset[] = {
   { "getAxis", l_lovrHeadsetGetAxis },
   { "vibrate", l_lovrHeadsetVibrate },
   { "newModel", l_lovrHeadsetNewModel },
-  { "getBonePose", l_lovrHeadsetGetBonePose },
   { "renderTo", l_lovrHeadsetRenderTo },
   { "update", l_lovrHeadsetUpdate },
   { "getMirrorTexture", l_lovrHeadsetGetMirrorTexture },
@@ -592,9 +534,18 @@ static const luaL_Reg lovrHeadset[] = {
   { NULL, NULL }
 };
 
+static void tableRegister(lua_State* L, const char *name, const luaL_Reg *fnTable) {
+  lua_pushstring(L, name);
+  lua_newtable(L);
+  luaL_register(L, NULL, fnTable);
+  lua_settable(L, -3);
+}
+static const luaL_Reg lovrHeadsetHands[];
+
 int luaopen_lovr_headset(lua_State* L) {
   lua_newtable(L);
   luaL_register(L, NULL, lovrHeadset);
+  tableRegister(L, "hand", lovrHeadsetHands);
 
   luax_pushconf(L);
   lua_getfield(L, -1, "headset");
@@ -628,6 +579,15 @@ int luaopen_lovr_headset(lua_State* L) {
     lua_pop(L, 1);
   }
 
+#if LOVR_USE_DESKTOP_HEADSET
+  // Deal with fake headset 
+  lua_getfield(L, LUA_REGISTRYINDEX, "_lovrconf");
+  lua_getfield(L, -1, "headset"); // FIXME: Could be nil?
+  lua_getfield(L, -1, "fakeKbamBlock");
+  lovrHeadsetFakeKbamBlock(lua_toboolean(L, -1));
+  lua_pop(L, 3);
+#endif
+
   if (lovrHeadsetInit(drivers, driverCount, offset, msaa)) {
     luax_atexit(L, lovrHeadsetDestroy);
   }
@@ -636,3 +596,47 @@ int luaopen_lovr_headset(lua_State* L) {
   headsetRenderData.ref = LUA_NOREF;
   return 1;
 }
+
+// TEMPORARY HANDS LIBRARY
+
+#include "headset/oculus_mobile_bridge.h"
+#include "headset/oculus_mobile.h"
+
+static void pushTableOfNumbers(lua_State* L, int idx, int count, ...) { // Takes floats
+  va_list args;
+  va_start(args, count);
+
+  lua_newtable(L);
+  for(int c = 0; c < count; c++) {
+    // Note we pass floats but they become doubles because of some garbage about how va_list works.
+    // This si probably okay becuase lua_number was probably a float to start with.
+    lua_pushnumber(L, va_arg(args, double));
+    lua_rawseti (L, -2, c+1);
+  }
+  lua_rawseti (L, -2, idx);
+
+  va_end(args);
+}
+
+static int l_lovrHeadsetHandsGetPoints(lua_State* L) {
+  Device device = luax_optdevice(L, 1);
+  lovrAssert(device == DEVICE_HAND_LEFT || device == DEVICE_HAND_RIGHT, "Only works with hands");
+  LovrOculusMobileHands *hand = &lovrOculusMobileHands[device == DEVICE_HAND_RIGHT];
+
+  int points = 0;
+  lua_newtable(L);
+  for(int c = 0; c < hand->handPoses.members; c++) {
+    BridgeLovrPose *pose = &hand->handPoses.poses[c];
+    lua_newtable(L);
+    pushTableOfNumbers(L, 1, 3, pose->x, pose->y, pose->z);
+    pushTableOfNumbers(L, 2, 4, pose->q[0], pose->q[1], pose->q[2], pose->q[3]);
+    lua_rawseti (L, -2, ++points);
+  }
+
+  return 1;
+}
+
+static const luaL_Reg lovrHeadsetHands[] = {
+  { "getPoints", l_lovrHeadsetHandsGetPoints },
+  { NULL, NULL }
+};

@@ -1,7 +1,7 @@
 #include "resources/boot.lua.h"
 #include "api/api.h"
-#include "platform.h"
-#include "util.h"
+#include "core/os.h"
+#include "core/util.h"
 #include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    lovrSetErrorCallback((errorFn*) luax_vthrow, T);
+    lovrSetErrorCallback(luax_vthrow, T);
 
 #ifdef EMSCRIPTEN
     lovrEmscriptenContext context = { L, T, argc, argv };
@@ -104,7 +104,6 @@ typedef enum { // What flag is being searched for?
 
 lua_State* lovrInit(lua_State* L, int argc, char** argv) {
   lovrAssert(lovrPlatformInit(), "Failed to initialize platform");
-  lovrPlatformSetTime(0.);
 
   // arg table
   // Args follow the lua standard https://en.wikibooks.org/wiki/Lua_Programming/command_line_parameter
@@ -168,7 +167,7 @@ lua_State* lovrInit(lua_State* L, int argc, char** argv) {
   lua_pop(L, 2);
 
   lua_pushcfunction(L, luax_getstack);
-  if (luaL_loadbuffer(L, (const char*) boot_lua, boot_lua_len, "boot.lua") || lua_pcall(L, 0, 1, -2)) {
+  if (luaL_loadbuffer(L, (const char*) src_resources_boot_lua, src_resources_boot_lua_len, "boot.lua") || lua_pcall(L, 0, 1, -2)) {
     fprintf(stderr, "%s\n", lua_tostring(L, -1));
     return NULL;
   }

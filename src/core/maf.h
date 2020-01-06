@@ -1,13 +1,14 @@
 #include <string.h>
 #include <math.h>
 #include "util.h"
-#ifdef LOVR_USE_SSE
-#include <xmmintrin.h>
-#endif
 
 #pragma once
 
+#ifdef MAF_EXPORT
+#define MAF LOVR_EXPORT
+#else
 #define MAF static LOVR_INLINE
+#endif
 
 typedef float* vec3;
 typedef float* quat;
@@ -352,18 +353,6 @@ MAF mat4 mat4_identity(mat4 m) {
 }
 
 MAF mat4 mat4_transpose(mat4 m) {
-#ifdef LOVR_USE_SSE
-  __m128 c0 = _mm_loadu_ps(m + 0);
-  __m128 c1 = _mm_loadu_ps(m + 4);
-  __m128 c2 = _mm_loadu_ps(m + 8);
-  __m128 c3 = _mm_loadu_ps(m + 12);
-  _MM_TRANSPOSE4_PS(c0, c1, c2, c3);
-  _mm_storeu_ps(m + 0, c0);
-  _mm_storeu_ps(m + 4, c1);
-  _mm_storeu_ps(m + 8, c2);
-  _mm_storeu_ps(m + 12, c3);
-  return m;
-#else
   float a01 = m[1], a02 = m[2], a03 = m[3],
         a12 = m[6], a13 = m[7],
         a23 = m[11];
@@ -381,7 +370,6 @@ MAF mat4 mat4_transpose(mat4 m) {
   m[13] = a13;
   m[14] = a23;
   return m;
-#endif
 }
 
 MAF mat4 mat4_invert(mat4 m) {
@@ -429,56 +417,7 @@ MAF mat4 mat4_invert(mat4 m) {
   return m;
 }
 
-// This can only be used if the matrix doesn't have any scale applied
-MAF mat4 mat4_invertPose(mat4 m) {
-#ifdef LOVR_USE_SSE
-  __m128 c0 = _mm_loadu_ps(m + 0);
-  __m128 c1 = _mm_loadu_ps(m + 4);
-  __m128 c2 = _mm_loadu_ps(m + 8);
-  __m128 c3 = _mm_loadu_ps(m + 12);
-  __m128 x1 = _mm_set_ps(1.f, 0.f, 0.f, 0.f);
-
-  _MM_TRANSPOSE4_PS(c0, c1, c2, x1);
-
-  __m128 x0 = _mm_add_ps(
-    _mm_mul_ps(c0, _mm_shuffle_ps(c3, c3, _MM_SHUFFLE(0, 0, 0, 0))),
-    _mm_mul_ps(c1, _mm_shuffle_ps(c3, c3, _MM_SHUFFLE(1, 1, 1, 1)))
-  );
-
-  x0 = _mm_add_ps(x0, _mm_mul_ps(c2, _mm_shuffle_ps(c3, c3, _MM_SHUFFLE(2, 2, 2, 2))));
-  x0 = _mm_xor_ps(x0, _mm_set1_ps(-0.f));
-  x0 = _mm_add_ps(x0, x1);
-
-  _mm_storeu_ps(m + 0, c0);
-  _mm_storeu_ps(m + 4, c1);
-  _mm_storeu_ps(m + 8, c2);
-  _mm_storeu_ps(m + 12, x0);
-
-  return m;
-#else
-  return mat4_invert(m);
-#endif
-}
-
 MAF mat4 mat4_multiply(mat4 m, mat4 n) {
-#ifdef LOVR_USE_SSE
-  __m128 c0 = _mm_loadu_ps(m + 0);
-  __m128 c1 = _mm_loadu_ps(m + 4);
-  __m128 c2 = _mm_loadu_ps(m + 8);
-  __m128 c3 = _mm_loadu_ps(m + 12);
-
-  for (int i = 0; i < 4; i++) {
-    __m128 x = _mm_set1_ps(n[4 * i + 0]);
-    __m128 y = _mm_set1_ps(n[4 * i + 1]);
-    __m128 z = _mm_set1_ps(n[4 * i + 2]);
-    __m128 w = _mm_set1_ps(n[4 * i + 3]);
-
-    _mm_storeu_ps(m + 4 * i, _mm_add_ps(
-      _mm_add_ps(_mm_mul_ps(x, c0), _mm_mul_ps(y, c1)),
-      _mm_add_ps(_mm_mul_ps(z, c2), _mm_mul_ps(w, c3))
-    ));
-  }
-#else
   float m00 = m[0], m01 = m[1], m02 = m[2], m03 = m[3],
         m10 = m[4], m11 = m[5], m12 = m[6], m13 = m[7],
         m20 = m[8], m21 = m[9], m22 = m[10], m23 = m[11],
@@ -505,8 +444,19 @@ MAF mat4 mat4_multiply(mat4 m, mat4 n) {
   m[13] = n30 * m01 + n31 * m11 + n32 * m21 + n33 * m31;
   m[14] = n30 * m02 + n31 * m12 + n32 * m22 + n33 * m32;
   m[15] = n30 * m03 + n31 * m13 + n32 * m23 + n33 * m33;
-#endif
   return m;
+}
+
+MAF float* mat4_multiplyVec4(mat4 m, float* v) {
+  float x = v[0] * m[0] + v[1] * m[4] + v[2] * m[8] + v[3] * m[12];
+  float y = v[0] * m[1] + v[1] * m[5] + v[2] * m[9] + v[3] * m[13];
+  float z = v[0] * m[2] + v[1] * m[6] + v[2] * m[10] + v[3] * m[14];
+  float w = v[0] * m[3] + v[1] * m[7] + v[2] * m[11] + v[3] * m[15];
+  v[0] = x;
+  v[1] = y;
+  v[2] = z;
+  v[3] = w;
+  return v;
 }
 
 MAF mat4 mat4_translate(mat4 m, float x, float y, float z) {
@@ -556,6 +506,22 @@ MAF void mat4_getPosition(mat4 m, vec3 position) {
 
 MAF void mat4_getOrientation(mat4 m, quat orientation) {
   quat_fromMat4(orientation, m);
+}
+
+MAF void mat4_getAngleAxis(mat4 m, float* angle, float* ax, float* ay, float* az) {
+  float sx = vec3_length(m + 0);
+  float sy = vec3_length(m + 4);
+  float sz = vec3_length(m + 8);
+  float diagonal[4] = { m[0], m[5], m[10] };
+  float axis[4] = { m[6] - m[9], m[8] - m[2], m[1] - m[4] };
+  diagonal[0] /= sx;
+  diagonal[1] /= sy;
+  diagonal[2] /= sz;
+  vec3_normalize(axis);
+  *angle = acosf((diagonal[0] + diagonal[1] + diagonal[2] - 1.f) / 2.f);
+  *ax = axis[0];
+  *ay = axis[1];
+  *az = axis[2];
 }
 
 MAF void mat4_getScale(mat4 m, vec3 scale) {
@@ -611,27 +577,27 @@ MAF mat4 mat4_fov(mat4 m, float left, float right, float up, float down, float c
 }
 
 MAF mat4 mat4_lookAt(mat4 m, vec3 from, vec3 to, vec3 up) {
-  float z[4];
   float x[4];
   float y[4];
-  vec3_sub(vec3_init(z, to), from);
+  float z[4];
+  vec3_normalize(vec3_sub(vec3_init(z, from), to));
   vec3_normalize(vec3_cross(vec3_init(x, up), z));
   vec3_cross(vec3_init(y, z), x);
   m[0] = x[0];
-  m[1] = y[0];
-  m[2] = z[0];
+  m[1] = x[1];
+  m[2] = x[2];
   m[3] = 0.f;
-  m[4] = x[1];
+  m[4] = y[0];
   m[5] = y[1];
-  m[6] = z[1];
+  m[6] = y[2];
   m[7] = 0.f;
-  m[8] = x[2];
-  m[9] = y[2];
+  m[8] = z[0];
+  m[9] = z[1];
   m[10] = z[2];
   m[11] = 0.f;
-  m[12] = 0.f;
-  m[13] = 0.f;
-  m[14] = 0.f;
+  m[12] = from[0];
+  m[13] = from[1];
+  m[14] = from[2];
   m[15] = 1.f;
   return m;
 }

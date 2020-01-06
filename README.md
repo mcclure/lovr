@@ -58,11 +58,8 @@ end
 
 ```lua
 function lovr.draw()
-  controllers = lovr.headset.getControllers()
-
-  for _, controller in ipairs(controllers) do
-    x, y, z = controller:getPosition()
-    lovr.graphics.sphere(x, y, z, .1)
+  for _, hand in ipairs(lovr.headset.getHands()) do
+    lovr.graphics.sphere(vec3(lovr.headset.getPosition(hand)), .1)
   end
 end
 ```
@@ -71,11 +68,10 @@ end
 
 ```lua
 function lovr.load()
-  model = lovr.graphics.newModel('teapot.fbx', 'teapot.png')
+  model = lovr.graphics.newModel('model.gltf')
 end
 
 function lovr.draw()
-  local x, y, z = 0, 0, 0
   model:draw(x, y, z)
 end
 ```
@@ -115,6 +111,7 @@ Contributors
 - [@shakesoda](https://github.com/shakesoda)
 - [@bcampbell](https://github.com/bcampbell)
 - [@mcclure](https://github.com/mcclure)
+- [@nevyn](https://github.com/nevyn)
 
 License
 ---

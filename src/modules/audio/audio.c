@@ -4,7 +4,7 @@
 #include "core/arr.h"
 #include "core/maf.h"
 #include "core/ref.h"
-#include "util.h"
+#include "core/util.h"
 #include "lib/miniaudio/miniaudio.h"
 #include <string.h>
 #include <stdlib.h>

@@ -19,12 +19,12 @@ typedef union {
     uint8_t type;
     uint8_t generation;
     uint16_t index;
+    uint32_t padding;
   } handle;
 } Vector;
 
 typedef struct Pool {
-  void* data;
-  float* floats;
+  float* data;
   size_t count;
   size_t cursor;
   size_t generation;

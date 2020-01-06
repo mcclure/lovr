@@ -40,7 +40,7 @@ static int l_lovrDataNewBlob(lua_State* L) {
 
 static int l_lovrDataNewModelData(lua_State* L) {
   Blob* blob = luax_readblob(L, 1, "Model");
-  ModelData* modelData = lovrModelDataCreate(blob);
+  ModelData* modelData = lovrModelDataCreate(blob, luax_readfile);
   luax_pushtype(L, ModelData, modelData);
   lovrRelease(Blob, blob);
   lovrRelease(ModelData, modelData);
