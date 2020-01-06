@@ -390,6 +390,8 @@ void lovrSourceDestroy(void* ref) {
 void lovrSourcePlay(Source* source) {
   ma_mutex_lock(&state.lock);
 
+  lovrDecoderSeek(source->decoder, 0);
+
   if (!source->playing) {
 
     source->playing = true;
