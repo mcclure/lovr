@@ -1,7 +1,6 @@
 #include <sstream>
 #include <unordered_map>
 #include "RtMidi.h"
-#include "platform.h"
 
 extern "C" {
 #include "api/api.h"

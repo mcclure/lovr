@@ -1,8 +1,8 @@
-(cd build && cmake -DLOVR_ENABLE_AUDIO=NO -DUSE_PORTAUDIO=YES -DCMAKE_BUILD_TYPE=Release ..)
+(cd build && cmake -DLOVR_ENABLE_AUDIO=NO -DCMAKE_BUILD_TYPE=Release ..)
 (cd build && cmake --build . --config Release)
 ./build/lovr game/lua midi/scatter
 
-(cd build && cmake -DLOVR_ENABLE_AUDIO=NO -DUSE_PORTAUDIO=YES -DCMAKE_BUILD_TYPE=Debug ..)
+(cd build && cmake -DLOVR_ENABLE_AUDIO=NO -DCMAKE_BUILD_TYPE=Debug ..)
 (cd build && cmake --build . --config Debug)
 
 -Add -A x64 to configure on windows, like

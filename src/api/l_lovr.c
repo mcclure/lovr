@@ -3,7 +3,14 @@
 #include "core/util.h"
 #include "lib/lua-cjson/lua_cjson.h"
 #include "lib/lua-enet/enet.h"
+
+#ifdef LOVR_ENABLE_MIDI
 #include "midi/hook-midi.h"
+#endif
+
+#ifdef LOVR_ENABLE_EXTAUDIO
+#include "audio/hook-audio.h"
+#endif
 
 const luaL_Reg lovrModules[] = {
   { "lovr", luaopen_lovr },
@@ -46,6 +53,9 @@ const luaL_Reg lovrModules[] = {
 #ifdef LOVR_ENABLE_MIDI
   { "ext.midi", luaopen_ext_midi },
   { "ext.midi.seq", luaopen_ext_midi_seq },
+#endif
+#ifdef LOVR_ENABLE_EXTAUDIO
+  { "ext.audio", luaopen_ext_audio },
 #endif
   { NULL, NULL }
 };

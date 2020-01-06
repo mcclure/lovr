@@ -4,7 +4,7 @@ namespace "minimal"
 
 lovrRequire("thread")
 
-local Pump = classNamed("Loader")
+local Pump = classNamed("Pump")
 
 -- Note: Will malfunction if "nil" is sent
 -- spec:
@@ -17,7 +17,7 @@ function Pump:_init(spec)
 	self.channelSend = self.channelSend or lovr.thread.getChannel(name.."-dn")
 	self.channelRecv = self.channelRecv or lovr.thread.getChannel(name.."-up")
 end
-local skate = require "ext.skategirl"
+
 function Pump:run()
 	while true do
 		local kind = self.channelRecv:pop(true) -- TODO: id first, to support cancel?
