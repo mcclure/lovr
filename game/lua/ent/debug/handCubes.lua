@@ -18,6 +18,7 @@ HandCubes.skeletonSkeleton = {
   [16]=1, [17]=16, [18]=17, [19]=18, [24]=19 -- Pinky
 }
 HandCubes.skeletonTipStart = 20
+HandCubes.expectedLength = 20
 HandCubes.skeletonFingers = {
 	{4, 5, 6, 20}, -- Thumb
 	{7, 8, 9, 21},    -- Index
@@ -45,24 +46,25 @@ function HandCubes:onUpdate()
 			lovr.headset.hand.getPoints(controllerName)
 		)
 
-		local handCubeColor, handLineColor
-		if self.handColors then handCubeColor, handLineColor = self:handColors(i, controllerName, points) end
-		handCubeColor = handCubeColor or tickCubeColor
-		handLineColor = handLineColor or tickLineColor
+		if tableTrue(points) then -- FIXME: Should compare #points against expectedLength?
+			local handCubeColor, handLineColor
+			if self.handColors then handCubeColor, handLineColor = self:handColors(i, controllerName, points) end
+			handCubeColor = handCubeColor or tickCubeColor
+			handLineColor = handLineColor or tickLineColor
+			for i2,at in ipairs(points) do
+				local pointCubeColor, pointLineColor
+				if self.pointColors then pointCubeColor, pointLineColor = self:pointColors(i, controllerName, points, i2, at) end
+				pointCubeColor = pointCubeColor or handCubeColor
+				pointLineColor = pointLineColor or handLineColor
 
-		for i2,at in ipairs(points) do
-			local pointCubeColor, pointLineColor
-			if self.pointColors then pointCubeColor, pointLineColor = self:pointColors(i, controllerName, points, i2, at) end
-			pointCubeColor = pointCubeColor or handCubeColor
-			pointLineColor = pointLineColor or handLineColor
-
-			local lineToPt = self.skeletonSkeleton[i2]
-			self.cubes:add(
-				{at=at.at, rotate=at.rotate, lineTo=lineToPt and points[lineToPt].at, color=pointCubeColor, lineColor=pointLineColor},
-				true
-			)
+				local lineToPt = self.skeletonSkeleton[i2]
+				self.cubes:add(
+					{at=at.at, rotate=at.rotate, lineTo=lineToPt and points[lineToPt].at, color=pointCubeColor, lineColor=pointLineColor},
+					true
+				)
+			end
+			if self.onHand then self:onHand(i, controllerName, points) end
 		end
-		if self.onHand then self:onHand(i, controllerName, points) end
 	end
 end
 
