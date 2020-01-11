@@ -1,6 +1,8 @@
 -- Sawtooth generator
 namespace ("sawtooth", "minimal")
 
+local ffi = require("ffi")
+
 ffi.cdef[[
 typedef unsigned short* shortptr;
 ]]

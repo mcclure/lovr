@@ -7,7 +7,7 @@ require "engine.thread.helper.boot"
 namespace "minimal"
 
 local AudioPump = require "midi.support.thread.helper.audioPump"
-local Generator = require generatorPath
+local Generator = require(generatorPath)
 local generator = Generator{}
 
 AudioPump{

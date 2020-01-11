@@ -13,6 +13,7 @@ function Audio:_init(spec)
 	self:super(spec)
 
 	self.name = self.name or "audio"
+	self.boot = self.boot or "midi/support/thread/helper/audio.lua"
 end
 
 function Audio:args()
