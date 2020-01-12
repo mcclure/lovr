@@ -49,13 +49,13 @@ function AudioPump:run()
 				self.channelSend:push(v, false)
 			end
 		end
--- print("LUAPUSH?")
 		blob = self.audioRecv:pop(0.1)
--- print("LUAPUSH:", blob)
 		if blob then
 			if type(blob) == "string" then error(blob) end -- Halt
 			blob = self.generator:audio(blob)
-			self.audioSend:push()
+			if blob == nil then error("Generator returned nil") end
+			if blob == false then return end
+			self.audioSend:push(blob)
 		end
 	end
 end

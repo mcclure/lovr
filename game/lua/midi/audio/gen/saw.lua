@@ -3,9 +3,7 @@ namespace ("sawtooth", "minimal")
 
 local ffi = require("ffi")
 
-ffi.cdef[[
-typedef unsigned short* shortptr;
-]]
+local shortptr = "unsigned short*"
 
 local Generator = classNamed("Generator")
 
@@ -27,6 +25,7 @@ function Generator:audio(blob)
 		ptr[i] = saw(self.ticks + i)
 	end
 	self.ticks = self.ticks + bytes
+	return blob
 end
 
 return Generator

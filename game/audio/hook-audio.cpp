@@ -70,16 +70,17 @@ int RenderAudio(int16_t *output, unsigned long frameCount) {
 		mtx_unlock(&pass.lock);
 
 		if (reset) {
-			lovrChannelDestroy(&state.send); state.send = NULL;
-			lovrChannelDestroy(&state.recv); state.recv = NULL;
+			lovrRelease(Channel, state.send); state.send = NULL;
+			lovrRelease(Channel, state.recv); state.recv = NULL;
 			if (!state.run.empty()) {
 				std::string send = state.run + "-up";
 				std::string recv = state.run + "-dn";
-				state.send = lovrThreadGetChannel(send.c_str()); lovrChannelClear(state.send);
-				state.recv = lovrThreadGetChannel(recv.c_str()); lovrChannelClear(state.recv);
+				state.send = lovrThreadGetChannel(send.c_str()); lovrRetain(state.send); lovrChannelClear(state.send);
+				state.recv = lovrThreadGetChannel(recv.c_str()); lovrRetain(state.recv); lovrChannelClear(state.recv);
 			}
 		}
 	}
+	if (!state.send) return EmptyAudio(output, frameCount);
 
 	if (frameCount > state.bufferTrueLength) {
 		lovrRelease(Blob, state.buffer);
@@ -92,12 +93,9 @@ int RenderAudio(int16_t *output, unsigned long frameCount) {
 	variant.value.object.pointer = state.buffer;
 	variant.value.object.type = "Blob";
 	variant.value.object.destructor = lovrBlobDestroy;
-
 	uint64_t dummy;
 	lovrChannelPush(state.send, &variant, -1, &dummy);
-//lovrLog("PUSHED\n");
 	bool popResult = lovrChannelPop(state.recv, &variant, 0.1);
-//lovrLog("POPPED %s\n", popResult?"Y":"N");
 	if (!popResult)
 		return CrashAndReturnEmpty(state.recv, "Audio request timed out", output, frameCount);
 	if (variant.type != TYPE_OBJECT || strcmp("Blob", variant.value.object.type))
