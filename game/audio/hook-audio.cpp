@@ -5,6 +5,7 @@ extern "C" {
 #include "core/hash.h"
 #include "event/event.h"
 #include "data/blob.h"
+#include "thread/thread.h"
 #include "thread/channel.h"
 #include "core/ref.h"
 }
@@ -12,6 +13,16 @@ extern "C" {
 #include "lib/tinycthread/tinycthread.h"
 
 #define SAMPLERATE 48000
+#define LOVR_DEBUG_AUDIOTAP 1
+
+#ifdef LOVR_DEBUG_AUDIOTAP
+// To get a record of what the audio callback is playing, define LOVR_DEBUG_AUDIOTAP,
+// after running look in the lovr save directory for lovrDebugAudio.raw, and open as raw 32-bit floats
+// Audacity (or Amadeus, on mac) can do this
+#include <stdio.h>
+static FILE* audiotapFile;
+static bool audiotapWriting;
+#endif
 
 struct {
 	bool threadUp;
@@ -64,10 +75,8 @@ int RenderAudio(int16_t *output, unsigned long frameCount) {
 			if (!state.run.empty()) {
 				std::string send = state.run + "-up";
 				std::string recv = state.run + "-dn";
-				uint64_t sendHash = hash64(send.c_str(), send.length());
-				uint64_t recvHash = hash64(recv.c_str(), recv.length());
-				state.send = lovrChannelCreate(sendHash); lovrChannelClear(state.send);
-				state.recv = lovrChannelCreate(recvHash); lovrChannelClear(state.recv);
+				state.send = lovrThreadGetChannel(send.c_str()); lovrChannelClear(state.send);
+				state.recv = lovrThreadGetChannel(recv.c_str()); lovrChannelClear(state.recv);
 			}
 		}
 	}
@@ -86,7 +95,9 @@ int RenderAudio(int16_t *output, unsigned long frameCount) {
 
 	uint64_t dummy;
 	lovrChannelPush(state.send, &variant, -1, &dummy);
+//lovrLog("PUSHED\n");
 	bool popResult = lovrChannelPop(state.recv, &variant, 0.1);
+//lovrLog("POPPED %s\n", popResult?"Y":"N");
 	if (!popResult)
 		return CrashAndReturnEmpty(state.recv, "Audio request timed out", output, frameCount);
 	if (variant.type != TYPE_OBJECT || strcmp("Blob", variant.value.object.type))
@@ -110,8 +121,14 @@ int RenderAudio(int16_t *output, unsigned long frameCount) {
 int PaRenderAudio(const void *input, void *output, unsigned long frameCount, const PaStreamCallbackTimeInfo* timeInfo,
 		PaStreamCallbackFlags statusFlags, void *module)
 {
-	int16_t **buffers;
+	int16_t **buffers = (int16_t **)output;
 	int result = RenderAudio(buffers[0], frameCount);
+
+#ifdef LOVR_DEBUG_AUDIOTAP
+  	if (audiotapWriting)
+    	fwrite(buffers[0], sizeof(uint16_t), frameCount, audiotapFile);
+#endif
+
 	for(int c = 1; c < state.channels; c++) {
 		memcpy(buffers[c], buffers[0], frameCount*sizeof(int16_t));
 	}
@@ -126,8 +143,11 @@ static int l_audioStart(lua_State *L) {
   	mtx_lock(&pass.lock);
   } else {
   	mtx_init(&pass.lock, mtx_plain);
-
 #if 1
+#ifdef LOVR_DEBUG_AUDIOTAP
+  	audiotapFile = fopen("/tmp/lovrDebugAudio.raw", "w");
+  	audiotapWriting = audiotapFile;
+#endif
   	// Init portaudio
 	PaError err = Pa_Initialize();
 	if (err) lovrThrow("Error initializing PortAudio: %s\n", Pa_GetErrorText(err));
@@ -146,10 +166,15 @@ static int l_audioStart(lua_State *L) {
 	PaStream *stream;
 	err = Pa_OpenStream(&stream, NULL, &outParam, SAMPLERATE,
 				paFramesPerBufferUnspecified, paNoFlag, &PaRenderAudio, NULL);
-
 	if (err) {
 		mtx_unlock(&pass.lock);
 		lovrThrow("Error opening PortAudio stream: %s\n", Pa_GetErrorText(err));
+	}
+
+	err = Pa_StartStream(stream);
+	if (err) {
+		mtx_unlock(&pass.lock);
+		lovrThrow("Error starting PortAudio stream: %s\n", Pa_GetErrorText(err));
 	}
 
 	pass.threadUp = true;

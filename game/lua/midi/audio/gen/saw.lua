@@ -20,9 +20,10 @@ end
 
 function Generator:audio(blob)
 	local bytes = blob:getSize()
+	local samples = bytes/2
 	local _ptr = blob:getPointer()
 	local ptr = ffi.cast(shortptr, _ptr)
-	for i=0,(bytes-1) do
+	for i=0,(samples-1) do
 		ptr[i] = saw(self.ticks + i)
 	end
 	self.ticks = self.ticks + bytes

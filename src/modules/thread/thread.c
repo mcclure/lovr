@@ -12,15 +12,18 @@ static struct {
   bool initialized;
   arr_t(Channel*) channels;
   map_t channelMap;
+  mtx_t channelLock;
 } state;
 
 bool lovrThreadModuleInit() {
   if (state.initialized) return false;
   arr_init(&state.channels);
   map_init(&state.channelMap, 0);
+  mtx_init(&state.channelLock, mtx_plain);
   return state.initialized = true;
 }
 
+// FIXME: Mutex?
 void lovrThreadModuleDestroy() {
   if (!state.initialized) return;
   for (size_t i = 0; i < state.channels.length; i++) {
@@ -33,6 +36,8 @@ void lovrThreadModuleDestroy() {
 
 Channel* lovrThreadGetChannel(const char* name) {
   uint64_t hash = hash64(name, strlen(name));
+
+  mtx_lock(&state.channelLock);
   uint64_t index = map_get(&state.channelMap, hash);
 
   if (index == MAP_NIL) {
@@ -41,18 +46,22 @@ Channel* lovrThreadGetChannel(const char* name) {
     arr_push(&state.channels, lovrChannelCreate(hash));
   }
 
-  return state.channels.data[index];
+  Channel *result = state.channels.data[index];
+  mtx_unlock(&state.channelLock);
+
+  return result;
 }
 
 void lovrThreadRemoveChannel(uint64_t hash) {
+  mtx_lock(&state.channelLock);
   uint64_t index = map_get(&state.channelMap, hash);
 
-  if (index == MAP_NIL) {
-    return;
+  if (index != MAP_NIL) {
+    map_remove(&state.channelMap, hash);
+    arr_splice(&state.channels, index, 1);
   }
 
-  map_remove(&state.channelMap, hash);
-  arr_splice(&state.channels, index, 1);
+  mtx_unlock(&state.channelLock);
 }
 
 Thread* lovrThreadInit(Thread* thread, int (*runner)(void*), Blob* body) {

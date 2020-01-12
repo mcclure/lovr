@@ -3,6 +3,7 @@
 namespace "minimal"
 
 lovrRequire("thread")
+lovrRequire("data")
 
 local AudioPump = classNamed("AudioPump")
 
@@ -15,8 +16,8 @@ function AudioPump:_init(spec)
 	local name = stringTag(self.name, self.tag)
 	local audioName = name .. "-callback"
 
-	self.audioSend = self.channelSend or lovr.thread.getChannel(audioName.."-dn")
-	self.audioRecv = self.channelRecv or lovr.thread.getChannel(audioName.."-up")
+	self.audioSend = self.audioSend or lovr.thread.getChannel(audioName.."-dn")
+	self.audioRecv = self.audioRecv or lovr.thread.getChannel(audioName.."-up")
 	self.channelSend = self.channelSend or lovr.thread.getChannel(name.."-dn")
 	self.channelRecv = self.channelRecv or lovr.thread.getChannel(name.."-up")
 end
@@ -48,9 +49,10 @@ function AudioPump:run()
 				self.channelSend:push(v, false)
 			end
 		end
-
-		blob, any = self.audioRecv:pop(0.1)
-		if any then
+-- print("LUAPUSH?")
+		blob = self.audioRecv:pop(0.1)
+-- print("LUAPUSH:", blob)
+		if blob then
 			if type(blob) == "string" then error(blob) end -- Halt
 			blob = self.generator:audio(blob)
 			self.audioSend:push()
