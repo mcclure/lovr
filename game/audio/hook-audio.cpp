@@ -50,6 +50,7 @@ int EmptyAudio(int16_t *output, int frameCount) {
 }
 
 int CrashAndReturnEmpty(Channel *send, std::string err, int16_t *output, int frameCount) {
+	err = "Audio render thread: " + err;
 	Variant variant; variant.type = TYPE_STRING; variant.value.string = strdup(err.c_str()); // l_thread_channel will dealloc
 	uint64_t dummy;
 	lovrChannelPush(send, &variant, -1, &dummy);
@@ -97,9 +98,9 @@ int RenderAudio(int16_t *output, unsigned long frameCount) {
 	lovrChannelPush(state.send, &variant, -1, &dummy);
 	bool popResult = lovrChannelPop(state.recv, &variant, 0.1);
 	if (!popResult)
-		return CrashAndReturnEmpty(state.recv, "Audio request timed out", output, frameCount);
+		return CrashAndReturnEmpty(state.send, "Audio request timed out", output, frameCount);
 	if (variant.type != TYPE_OBJECT || strcmp("Blob", variant.value.object.type))
-		return CrashAndReturnEmpty(state.recv, "Audio request response of wrong type", output, frameCount);
+		return CrashAndReturnEmpty(state.send, "Audio request response of wrong type", output, frameCount);
 	Blob *resultBlob = (Blob*)variant.value.object.pointer;
 	int resultSize = std::min(resultBlob->size/sizeof(int16_t), frameCount);
 	memcpy(output, resultBlob->data, resultSize*sizeof(int16_t));
@@ -154,10 +155,10 @@ static int l_audioStart(lua_State *L) {
 	const PaHostApiInfo *api = Pa_GetHostApiInfo(defaultApiIdx);
 	PaDeviceIndex outDev = Pa_GetDefaultOutputDevice();
 	const PaDeviceInfo *outInfo = Pa_GetDeviceInfo(outDev);
-
+lovrLog("LEN %d\n", (int)(outInfo?outInfo->defaultLowOutputLatency:0));
 	pass.channels = std::min(outInfo->maxOutputChannels, 2);
 	PaStreamParameters outParam = {outDev, pass.channels,
-			paInt16|paNonInterleaved, outInfo?outInfo->defaultLowOutputLatency:0, NULL};
+			paInt16|paNonInterleaved, std::max<PaTime>(512, outInfo?outInfo->defaultLowOutputLatency:0), NULL};
 
 	mtx_lock(&pass.lock);
 
