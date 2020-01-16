@@ -55,6 +55,7 @@ end
 function lovr.update(dt)
 	ent.root:route("onUpdate", dt)
 	entity_cleanup()
+	lovr.timer.sleep(0.05)
 end
 
 function lovr.draw()

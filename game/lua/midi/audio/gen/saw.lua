@@ -16,7 +16,7 @@ local SHRT_MIN = -32767
 local UN_SHRT_MIN = -SHRT_MIN
 
 local function conv(x)
-	return math.max(-1, math.min(1, x*100))*SHRT_MIN
+	return math.max(-1, math.min(1, x))*SHRT_MIN
 end
 
 local function saw(x)
@@ -27,13 +27,13 @@ local SawSource = classNamed("SawSource")
 
 function SawSource:pre(follow)
 	if not self.ticks then self.ticks = 0 end
-	if follow then 
+	if false and follow then 
 		if follow.f ~= self.lastf then
 			self.incr = self.incr and (self.incr+1) or 1
 			self.lastf = follow.f
 		end
 		self.f = follow.f + (self.incr/(44100*8))
-	elseif not self.f or self.ticks - self.lastf > 100 then
+	elseif not self.f or self.ticks - self.lastf > 1000 then
 		self.f = math.random(32,512)/44100
 		self.lastf = self.ticks
 	end
