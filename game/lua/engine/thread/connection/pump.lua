@@ -19,9 +19,11 @@ function read(channel, force)
 	end
 end
 
+function PumpEnt:args() end
+
 function PumpEnt:insert(parent)
 	self.thread = lovr.thread.newThread(self.boot)
-	self.thread:start(self.tag)
+	self.thread:start(self.tag, self:args())
 
 	self.boot = nil
 	Ent.insert(self, parent)

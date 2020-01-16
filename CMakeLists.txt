@@ -26,6 +26,8 @@ option(LOVR_USE_OCULUS_MOBILE "Enable the Oculus Mobile (Android) backend for th
 option(LOVR_USE_DESKTOP_HEADSET "Enable the keyboard/mouse backend for the headset module" ON)
 option(LOVR_USE_LEAP "Enable the Leap Motion backend for the headset module" OFF)
 
+option(LOVR_USE_ASAN "Enable Address Sanitizer" OFF)
+
 option(LOVR_SYSTEM_ENET "Use the system-provided enet" OFF)
 option(LOVR_SYSTEM_GLFW "Use the system-provided glfw" OFF)
 option(LOVR_SYSTEM_LUA "Use the system-provided Lua" OFF)
@@ -78,6 +80,13 @@ elseif(UNIX)
   if(NOT APPLE)
     set(CMAKE_SKIP_RPATH OFF)
   endif()
+endif()
+
+if (LOVR_USE_ASAN)
+  set(LOVR_ASAN_FLAGS "-fsanitize=address -O1 -fno-omit-frame-pointer")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${LOVR_ASAN_FLAGS}")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${LOVR_ASAN_FLAGS}")
+  set (CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${LOVR_ASAN_FLAGS}")
 endif()
 
 # enet
