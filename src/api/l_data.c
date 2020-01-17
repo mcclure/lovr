@@ -30,6 +30,7 @@ static int l_lovrDataNewBlob(lua_State* L) {
     size = blob->size;
     data = malloc(size);
     lovrAssert(data, "Out of memory");
+    memcpy(data, blob->data, size);
   }
   const char* name = luaL_optstring(L, 2, "");
   Blob* blob = lovrBlobCreate(data, size, name);
@@ -39,11 +40,20 @@ static int l_lovrDataNewBlob(lua_State* L) {
 }
 
 static int l_lovrDataNewAudioStream(lua_State* L) {
-  Blob* blob = luax_readblob(L, 1, "AudioStream");
-  int bufferSize = luaL_optinteger(L, 2, 4096);
-  AudioStream* stream = lovrAudioStreamCreate(blob, bufferSize);
+  AudioStream* stream = NULL;
+  if (lua_type(L, 1) == LUA_TNUMBER && lua_type(L, 2) == LUA_TNUMBER) {
+    int channelCount = lua_tonumber(L, 1);
+    int sampleRate = lua_tonumber(L, 2);
+    int bufferSize = luaL_optinteger(L, 3, 4096);
+    int queueLimit = luaL_optinteger(L, 4, sampleRate*0.5);
+    stream = lovrAudioStreamCreateRaw(channelCount, sampleRate, bufferSize, queueLimit);
+  } else {
+    Blob* blob = luax_readblob(L, 1, "AudioStream");
+    int bufferSize = luaL_optinteger(L, 2, 4096);
+    stream = lovrAudioStreamCreate(blob, bufferSize);
+    lovrRelease(Blob, blob);
+  }
   luax_pushtype(L, AudioStream, stream);
-  lovrRelease(Blob, blob);
   lovrRelease(AudioStream, stream);
   return 1;
 }
