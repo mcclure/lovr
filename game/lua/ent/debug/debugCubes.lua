@@ -1,20 +1,22 @@
+-- Convenience class for drawing lines and cubes (so you can "see" points of interest)
 namespace "standard"
 
--- Base class for an animation
 -- spec:
---     cubes: {at=vec3, q=quat, color={r,g,b}, expire=time in seconds, size=diameter, lineTo=vec3, lineColor={r,g,b}}
+--     cubes: {at=vec3, rotate=quat, color={r,g,b}, expire=time in seconds, size=diameter, lineTo=vec3, lineColor={r,g,b}}
 --            only "at" is required, also add "noCube=true" to suppress cube
 --     topCubes: same as cubes
---     speed: how quick to timeout cubes. (default 1, 0 means "never time out")
+--     speed: set to slow/speed all timeouts
 --     size: default size (diameter) of cubes
 --     color: default color of cubes (default 0.5, 0.5, 0.5)
+--     lineColor: default color of lines (if absent forward to color)
 --     shader: shader for cubes (default to shader.shader)
 --     onTop: if true default to ignoring depth
+--     duration: default time to expire (default 1, false means never timeout, true means 1 frame)
 --     neverExpire: if true expiration is disabled everywhere
 -- members:
 --     time: current point in the animation (in "animation time")
 -- methods:
---     add(cube, duration): duration defaults to 1, cube may be vec3 or a cube table as above
+--     add(cube, duration): duration defaults 1 w/same rules as above, cube may be vec3 or a cube table as above
 --     expireAll(): forget everything
 local DebugCubes = classNamed("DebugCubes", Ent)
 
@@ -25,6 +27,7 @@ function DebugCubes:_init(spec) -- Do this in init instead of onLoad() so add() 
 	self.topCubes = self.topCubes or {}
 	self.time = 0
 	self.speed = self.speed or 1
+	if self.duration == nil then self.duration = 1 end
 	self.size = self.size or 1
 	self.color = self.color or {0.5, 0.5, 0.5}
 	self.shader = self.shader or require "shader.shader"
@@ -35,7 +38,9 @@ function DebugCubes:onUpdate(dt)
 end
 
 function DebugCubes:timedOut(t)
-	return not self.neverExpire and t.expire and t.expire < self.time
+	if self.neverExpire or t.expire == false then return false end
+	if t.expire == true then t.expire = -1 return false end 
+	return t.expire < self.time
 end
 
 function DebugCubes:add(cube, duration, onTop)
@@ -45,8 +50,12 @@ function DebugCubes:add(cube, duration, onTop)
 		cube = {at=cube}
 	end
 	if not cube.at then error("Debug cube: no position?") end
-	if not cube.expire and not (duration and duration <= 0) then
-		cube.expire = self.time + (duration or 1)
+	if cube.expire == nil then
+		if duration == nil then duration = self.duration end
+		if duration == nil then duration = 1 end
+		if duration == false or duration==true then cube.expire = duration
+		else cube.expire = self.time + duration
+		end
 	end
 	table.insert(onTop and self.topCubes or self.cubes, cube)
 end
@@ -65,6 +74,8 @@ end
 function DebugCubes:doDraw(cubes)
 	local upTo = #cubes
 
+	-- Draw cubes first, then lines because lovr batching behavior is currently weird
+	-- Could also get optimal perf by turning blend mode to off
 	for i=1,upTo do
 		local t = cubes[i]
 
@@ -87,17 +98,19 @@ function DebugCubes:doDraw(cubes)
 			if not t then break end
 		end
 
-		-- Draw
-		lovr.graphics.setShader(self.shader)
-		local color = t.color or self.color
-		lovr.graphics.setColor(unpack(color))
+		-- Draw cube
 		if not t.noCube then
-			lovr.graphics.cube('fill', t.at.x, t.at.y, t.at.z, t.size or self.size, maybeUnpack(t.q))
+			local color = t.color or self.color
+			lovr.graphics.setShader(self.shader)
+			lovr.graphics.setColor(unpack(color))
+			lovr.graphics.cube('fill', t.at.x, t.at.y, t.at.z, t.size or self.size, maybeUnpack(t.rotate))
 		end
-
+	end -- Draw line
+	for i,t in ipairs(cubes) do
 		if t.lineTo then
 			lovr.graphics.setShader()
-			if t.lineColor then lovr.graphics.setColor(t.lineColor:unpack()) end
+			local color = t.lineColor or self.lineColor or t.color or self.color
+			lovr.graphics.setColor(unpack(color))
 			lovr.graphics.line(t.at.x, t.at.y, t.at.z, t.lineTo:unpack())
 		end
 	end

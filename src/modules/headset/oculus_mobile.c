@@ -141,7 +141,7 @@ static bool vrapi_getVelocity(Device device, vec3 velocity, vec3 angularVelocity
 }
 
 static bool buttonDown(BridgeLovrButton field, DeviceButton button, bool *result) {
-  if (bridgeLovrMobileData.deviceType == BRIDGE_LOVR_DEVICE_QUEST) {
+  if (bridgeLovrMobileData.deviceType == BRIDGE_LOVR_DEVICE_QUEST) { // FIXME ASSUMPTIONS
     switch (button) {
       case BUTTON_MENU: *result = field & BRIDGE_LOVR_BUTTON_MENU; break; // Technically "LMENU" but only fires on left controller
       case BUTTON_TRIGGER: *result = field & BRIDGE_LOVR_BUTTON_SHOULDER; break;
@@ -166,7 +166,7 @@ static bool buttonDown(BridgeLovrButton field, DeviceButton button, bool *result
 
 static bool buttonTouch(BridgeLovrTouch field, DeviceButton button, bool *result) {
   // Only Go touch sensor is the touchpad
-  if (bridgeLovrMobileData.deviceType == BRIDGE_LOVR_DEVICE_GO && button != BUTTON_TOUCHPAD)
+  if (bridgeLovrMobileData.deviceType == BRIDGE_LOVR_DEVICE_GO && button != BUTTON_TOUCHPAD) // FIXME ASSUMPTIONS
     return false;
 
   switch (button) {
@@ -186,7 +186,11 @@ static bool vrapi_isDown(Device device, DeviceButton button, bool* down) {
   if (idx < 0)
     return false;
 
-  return buttonDown(bridgeLovrMobileData.updateData.controllers[idx].buttonDown, button, down);
+  BridgeLovrController *data = &bridgeLovrMobileData.updateData.controllers[idx];
+  if (data->hand & BRIDGE_LOVR_HAND_TRACKING)
+    return false;
+
+  return buttonDown(data->handset.buttonDown, button, down);
 }
 
 static bool vrapi_isTouched(Device device, DeviceButton button, bool* touched) {
@@ -194,7 +198,11 @@ static bool vrapi_isTouched(Device device, DeviceButton button, bool* touched) {
   if (idx < 0)
     return false;
 
-  return buttonTouch(bridgeLovrMobileData.updateData.controllers[idx].buttonTouch, button, touched);
+  BridgeLovrController *data = &bridgeLovrMobileData.updateData.controllers[idx];
+  if (data->hand & BRIDGE_LOVR_HAND_TRACKING)
+    return false;
+
+  return buttonTouch(data->handset.buttonTouch, button, touched);
 }
 
 static bool vrapi_getAxis(Device device, DeviceAxis axis, float* value) {
@@ -204,25 +212,27 @@ static bool vrapi_getAxis(Device device, DeviceAxis axis, float* value) {
 
   BridgeLovrController *data = &bridgeLovrMobileData.updateData.controllers[idx];
 
-  if (bridgeLovrMobileData.deviceType == BRIDGE_LOVR_DEVICE_QUEST) {
+  if (data->hand & BRIDGE_LOVR_HAND_TRACKING) {
+    return false;
+  } else if (data->hand & BRIDGE_LOVR_HAND_RIFTY) {
     switch (axis) {
       case AXIS_THUMBSTICK:
-        value[0] = data->trackpad.x;
-        value[1] = data->trackpad.y;
+        value[0] = data->handset.trackpad.x;
+        value[1] = data->handset.trackpad.y;
         break;
-      case AXIS_TRIGGER: value[0] = data->trigger; break;
-      case AXIS_GRIP: value[0] = data->grip; break;
+      case AXIS_TRIGGER: value[0] = data->handset.trigger; break;
+      case AXIS_GRIP: value[0] = data->handset.grip; break;
       default: return false;
     }
   } else {
     switch (axis) {
       case AXIS_TOUCHPAD:
-        value[0] = (data->trackpad.x - 160) / 160.f;
-        value[1] = (data->trackpad.y - 160) / 160.f;
+        value[0] = (data->handset.trackpad.x - 160) / 160.f;
+        value[1] = (data->handset.trackpad.y - 160) / 160.f;
         break;
       case AXIS_TRIGGER: {
         bool down;
-        if (!buttonDown(data->buttonDown, BUTTON_TRIGGER, &down))
+        if (!buttonDown(data->handset.buttonDown, BUTTON_TRIGGER, &down))
           return false;
         value[0] = down ? 1.f : 0.f;
         break;
@@ -466,6 +476,27 @@ void bridgeLovrUpdate(BridgeLovrUpdateData *updateData) {
   } else if (pauseState == PAUSESTATE_RESUME) { // Resume frame-- adjust platform time to be equal to last good platform time
     lovrPlatformSetTime(lastPauseAt);
     pauseState = PAUSESTATE_NONE;
+  }
+
+  // Temporary hand handling
+  for(int c = 0; c < updateData->controllerCount; c++) {
+    BridgeLovrController *in = &updateData->controllers[c];
+    if (in->hand & BRIDGE_LOVR_HAND_TRACKING) {
+      bool right = in->hand & BRIDGE_LOVR_HAND_RIGHT;
+      LovrOculusMobileHands *out = &lovrOculusMobileHands[right];
+      out->live = true;
+      out->confidence = in->tracking.confidence;
+      out->handScale = in->tracking.handScale;
+      out->pose = in->pose;
+
+      size_t arraySize = in->tracking.poses->members * sizeof(BridgeLovrPose);
+      if (in->tracking.poses->members > out->handPoses.members) {
+        free(out->handPoses.poses);
+        out->handPoses.poses = malloc(arraySize);
+      }
+      out->handPoses.members = in->tracking.poses->members;
+      memcpy(out->handPoses.poses, in->tracking.poses->poses, arraySize);
+    }
   }
 
   // Go
