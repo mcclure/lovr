@@ -466,6 +466,17 @@ void bridgeLovrInit(BridgeLovrInitData *initData) {
   LOG("\n BRIDGE INIT COMPLETE\n");
 }
 
+#define growAndCopyArray(OUT, IN, DATA, TYPE) \
+  { \
+      size_t arraySize = IN->members * sizeof(TYPE); \
+      if (IN->members > OUT.members) { \
+        free(OUT.DATA); \
+        OUT.DATA = malloc(arraySize); \
+      } \
+      OUT.members = IN->members; \
+      memcpy(OUT.DATA, IN->DATA, arraySize); \
+  }
+
 void bridgeLovrUpdate(BridgeLovrUpdateData *updateData) {
   // Unpack update data
   bridgeLovrMobileData.updateData = *updateData;
@@ -489,13 +500,9 @@ void bridgeLovrUpdate(BridgeLovrUpdateData *updateData) {
       out->handScale = in->tracking.handScale;
       out->pose = in->pose;
 
-      size_t arraySize = in->tracking.poses->members * sizeof(BridgeLovrPose);
-      if (in->tracking.poses->members > out->handPoses.members) {
-        free(out->handPoses.poses);
-        out->handPoses.poses = malloc(arraySize);
-      }
-      out->handPoses.members = in->tracking.poses->members;
-      memcpy(out->handPoses.poses, in->tracking.poses->poses, arraySize);
+      growAndCopyArray(out->bones, in->tracking.bones, strings, char *);
+      growAndCopyArray(out->handPoses, in->tracking.poses, poses, BridgeLovrPose);
+      growAndCopyArray(out->fingerConfidence, in->tracking.fingerConfidence, numbers, float);
     }
   }
 

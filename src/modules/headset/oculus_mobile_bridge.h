@@ -103,6 +103,11 @@ typedef struct { // Assumed constant
 
 typedef struct { // Assumed constant
   int members;
+  float *numbers;
+} BridgeLovrFloatList;
+
+typedef struct { // Assumed constant
+  int members;
   BridgeLovrPose *poses;
 } BridgeLovrPoseList;
 
@@ -123,6 +128,7 @@ typedef struct {
       float handScale;
       BridgeLovrStringList *bones;
       BridgeLovrPoseList *poses;
+      BridgeLovrFloatList *fingerConfidence;
     } tracking;
   };
 } BridgeLovrController;

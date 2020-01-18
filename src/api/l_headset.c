@@ -609,13 +609,24 @@ static void pushTableOfNumbers(lua_State* L, int idx, int count, ...) { // Takes
   lua_newtable(L);
   for(int c = 0; c < count; c++) {
     // Note we pass floats but they become doubles because of some garbage about how va_list works.
-    // This si probably okay becuase lua_number was probably a float to start with.
+    // This is probably okay becuase lua_number is probably a double anyway.
     lua_pushnumber(L, va_arg(args, double));
     lua_rawseti (L, -2, c+1);
   }
   lua_rawseti (L, -2, idx);
 
   va_end(args);
+}
+
+static int l_lovrHeadsetHandsIsHand(lua_State* L) {
+  Device device = luax_optdevice(L, 1);
+  lovrAssert(device == DEVICE_HAND_LEFT || device == DEVICE_HAND_RIGHT, "Only works with hands");
+  LovrOculusMobileHands *hand = &lovrOculusMobileHands[device == DEVICE_HAND_RIGHT];
+
+  int points = 0;
+  lua_pushboolean(L, hand->live);
+
+  return 1;
 }
 
 static int l_lovrHeadsetHandsGetPoints(lua_State* L) {
@@ -636,7 +647,42 @@ static int l_lovrHeadsetHandsGetPoints(lua_State* L) {
   return 1;
 }
 
+static int l_lovrHeadsetHandsGetBoneNames(lua_State* L) {
+  Device device = luax_optdevice(L, 1);
+  lovrAssert(device == DEVICE_HAND_LEFT || device == DEVICE_HAND_RIGHT, "Only works with hands");
+  LovrOculusMobileHands *hand = &lovrOculusMobileHands[device == DEVICE_HAND_RIGHT];
+
+  lua_newtable(L);
+
+  for(int c = 0; c < hand->bones.members; c++) {
+    lua_pushstring(L, hand->bones.strings[c]);
+    lua_rawseti (L, -2, c+1);
+  }
+
+  return 1;
+}
+
+static int l_lovrHeadsetHandsGetConfidence(lua_State* L) {
+  Device device = luax_optdevice(L, 1);
+  lovrAssert(device == DEVICE_HAND_LEFT || device == DEVICE_HAND_RIGHT, "Only works with hands");
+  LovrOculusMobileHands *hand = &lovrOculusMobileHands[device == DEVICE_HAND_RIGHT];
+
+  lua_newtable(L);
+
+  lua_pushnumber(L, hand->confidence);
+  lua_rawseti (L, -2, 0);
+  for(int c = 0; c < hand->fingerConfidence.members; c++) {
+    lua_pushnumber(L, hand->fingerConfidence.numbers[c]);
+    lua_rawseti (L, -2, c+1);
+  }
+
+  return 1;
+}
+
 static const luaL_Reg lovrHeadsetHands[] = {
+  { "isHand", l_lovrHeadsetHandsIsHand },
   { "getPoints", l_lovrHeadsetHandsGetPoints },
+  { "getBoneNames", l_lovrHeadsetHandsGetBoneNames },
+  { "getConfidence", l_lovrHeadsetHandsGetConfidence },
   { NULL, NULL }
 };

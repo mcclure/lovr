@@ -3,9 +3,9 @@ namespace "standard"
 
 -- spec:
 --     updateColors() -- Called once per update at start, return color, linecolor
---     handColors(handI, hand, points) -- Like updateColors, called once per hand
---     pointColors(handI, hand, points, pointI, point) -- Like updateColors, called once per point
---     onHand(handI, hand, points) -- Called once per update (pseudoevent)
+--     handColors(handI, hand, points, handAt) -- Like updateColors, called once per hand
+--     pointColors(handI, hand, points, pointI, point, handAt) -- Like updateColors, called once per point
+--     onHand(handI, hand, points, handAt) -- Called once per update (pseudoevent)
 local HandCubes = classNamed("HandCubes", Ent)
 local DebugCubes = require "ent.debug.debugCubes"
 
@@ -48,7 +48,7 @@ function HandCubes:onUpdate()
 
 		if tableTrue(points) then -- FIXME: Should compare #points against expectedLength?
 			local handCubeColor, handLineColor
-			if self.handColors then handCubeColor, handLineColor = self:handColors(i, controllerName, points) end
+			if self.handColors then handCubeColor, handLineColor = self:handColors(i, controllerName, points, handAt) end
 			handCubeColor = handCubeColor or tickCubeColor
 			handLineColor = handLineColor or tickLineColor
 			for i2,at in ipairs(points) do
