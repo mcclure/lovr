@@ -35,6 +35,7 @@ function SawSource:pre(follow)
 		self.f = follow.f + (self.incr/(44100*8))
 	elseif not self.f or self.ticks - self.lastf > 1000 then
 		self.f = math.random(32,512)/44100
+		if self.factor then self.f = self.f*self.factor end
 		self.lastf = self.ticks
 	end
 end
@@ -49,6 +50,7 @@ end
 
 function Generator:audio(blob)
 	if not self.gens then self.gens = {SawSource(), SawSource(), SawSource()} end
+	self.gens[3].factor = 1/100
 
 	local bytes = blob:getSize()
 	local samples = bytes/2
@@ -58,7 +60,7 @@ function Generator:audio(blob)
 	for i,v in ipairs(self.gens) do v:pre(self.gens[i-1]) end
 
 	for i=1,samples do
-		ptr[i-1] = conv( self.gens[1]:get(i) + self.gens[2]:get(i) + self.gens[3]:get(i) )
+		ptr[i-1] = conv( (self.gens[1]:get(i) + self.gens[2]:get(i)) * (self.gens[3]:get(i)+1) )
 	end
 
 	for i,v in ipairs(self.gens) do v:post(samples) end

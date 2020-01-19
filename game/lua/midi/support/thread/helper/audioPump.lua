@@ -18,6 +18,8 @@ function AudioPump:_init(spec)
 
 	self.audioSend = self.audioSend or lovr.thread.getChannel(audioName.."-dn")
 	self.audioRecv = self.audioRecv or lovr.thread.getChannel(audioName.."-up")
+	self.scopeSend = self.channelSend or lovr.thread.getChannel(name.."-dn")
+	self.scopeRecv = self.channelRecv or lovr.thread.getChannel(name.."-up")
 	self.channelSend = self.channelSend or lovr.thread.getChannel(name.."-dn")
 	self.channelRecv = self.channelRecv or lovr.thread.getChannel(name.."-up")
 end

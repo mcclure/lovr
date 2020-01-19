@@ -4,6 +4,7 @@ namespace "standard"
 
 local ui2 = require "ent.ui2"
 local Audio = require "midi.support.thread.audio"
+local AudioScope = require "midi.support.thread.audioScope"
 
 local TestUi = classNamed("TestUi", ui2.ScreenEnt)
 
@@ -21,6 +22,8 @@ function TestUi:onLoad()
 	layout:layout()
 
 	self.audio = Audio{generator="midi.audio.gen.saw"}:insert(self)
+
+	AudioScope{target="onMirror"}:insert(self)
 end
 
 return TestUi
