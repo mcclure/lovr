@@ -2,30 +2,33 @@
 
 namespace "standard"
 
-local AudioScope = classNamed("AudioScope", Ent)
+local FloaterEnt = require "midi.support.ent.floater"
+local AudioScope = classNamed("AudioScope", FloaterEnt)
+local shaderBasic = require "shader.basic"
 
 function AudioScope:onLoad()
-	self.at = self.at or vec3(0,0,0)
-	self.size = self.size or vec2(0.2,0.1)
-	if self.target then
-		local fn = self.render
-		if self.target == "onMirror" then
-			local f2 = fn
-			fn = function(...) uiMode() f2(...) end
-		end
-		self[self.target] = fn
-	end
+	FloaterEnt.onLoad(self)
+
+	self.scopeShader = lovr.graphics.newShader(basic.defaultVertex, [[
+		uniform sampler2D scopeImage;
+		uniform vec4 light, dark;
+		vec4 color(vec4 graphicsColor, sampler2D image, vec2 uv) {
+		  vec3 direction = texturePosition[lovrViewID];
+		  float theta = acos(-direction.y / length(direction));
+		  float phi = atan(direction.x, -direction.z);
+		  uv = vec2(0.5f + phi / (2.0f * PI), theta / PI);
+		  return graphicsColor * (texture(lovrDiffuseTexture, uv) * (1.0f-ratio) + texture(otherImage, uv) * (ratio));
+		}
+	]], {} )
+
 end
 
-function AudioScope:render()
-	if self.transform then self.transform:push() end
+function AudioScope:willRender()
+	lovr.graphics.setShader(self.scopeShader)
+end
 
-	lovr.graphics.setColor(0.5,0.5,0.5)
-	local x,y,z = self.at:unpack()
-	local w,h = self.size:unpack()
-	lovr.graphics.plane('fill', x,y,z,w,h)
-
-	if self.transform then lovr.graphics.pop() end
+function AudioScope:didRender()
+	lovr.graphics.setShader()
 end
 
 return AudioScope
