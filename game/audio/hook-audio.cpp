@@ -155,7 +155,7 @@ static int l_audioStart(lua_State *L) {
 	const PaHostApiInfo *api = Pa_GetHostApiInfo(defaultApiIdx);
 	PaDeviceIndex outDev = Pa_GetDefaultOutputDevice();
 	const PaDeviceInfo *outInfo = Pa_GetDeviceInfo(outDev);
-lovrLog("LEN %d\n", (int)(outInfo?outInfo->defaultLowOutputLatency:0));
+lovrLog("DEFAULT LOW LATENCY: %d\n", (int)(outInfo?outInfo->defaultLowOutputLatency:0));
 	pass.channels = std::min(outInfo->maxOutputChannels, 2);
 	PaStreamParameters outParam = {outDev, pass.channels,
 			paInt16|paNonInterleaved, std::max<PaTime>(512, outInfo?outInfo->defaultLowOutputLatency:0), NULL};

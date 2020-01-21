@@ -17,10 +17,11 @@ function AudioScope:onLoad()
 		uniform vec4 bgColor;
 		vec4 color(vec4 graphicsColor, sampler2D image, vec2 uv) {
 		  float y = texture(image, vec2(uv.x, 0.0f)).r;
-		  float dist = min(1.0f, abs(uv.y - y));
+		  float dist = smoothstep( 0.0, 0.1, abs(uv.y - y));
 		  return graphicsColor * (1-dist) + bgColor * dist;
 		}
 	]], {} )
+	self.scopeShader:send("bgColor", {0.2, 0.2, 0.2});
 
 	self.name = self.name or "audio"
 	local name = stringTag(self.name, self.tag)
@@ -55,6 +56,7 @@ function AudioScope:willRender()
 		self.scopeSend:push(scopeBlob)
 	end
 	lovr.graphics.setShader(self.scopeShader)
+	lovr.graphics.setColor(1,1,0)
 end
 
 function AudioScope:didRender()

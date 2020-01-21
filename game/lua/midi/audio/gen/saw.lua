@@ -18,13 +18,15 @@ local function conv(x)
 end
 
 local function saw(x)
-	return (x*2) % 2 - 1
+	x = (x*4) % 4
+	if x > 2 then x = 4 - x end
+	return x - 1
 end
 
 local SawSource = classNamed("SawSource")
 
 function SawSource:pre(follow)
-	if not self.ticks then self.ticks = 0 end
+	if not self.ticks then self.ticks = 0 self.changes = 0 end
 	if false and follow then 
 		if follow.f ~= self.lastf then
 			self.incr = self.incr and (self.incr+1) or 1
@@ -35,6 +37,7 @@ function SawSource:pre(follow)
 		self.f = math.random(32,512)/44100
 		if self.factor then self.f = self.f*self.factor end
 		self.lastf = self.ticks
+		self.changes = self.changes + 1
 	end
 end
 
@@ -58,7 +61,9 @@ function Generator:audio(blob)
 	for i,v in ipairs(self.gens) do v:pre(self.gens[i-1]) end
 
 	for i=1,samples do
-		ptr[i-1] = conv( (self.gens[1]:get(i) + self.gens[2]:get(i)) * (self.gens[3]:get(i)+1) )
+		local x = self.gens[1]:get(i)
+		--if self.gens[3].changes > 3 then x = x + self.gens[2]:get(i) end
+		ptr[i-1] = conv( x * (self.gens[3]:get(i)+1) )
 	end
 
 	for i,v in ipairs(self.gens) do v:post(samples) end
