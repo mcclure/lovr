@@ -40,7 +40,7 @@ typedef struct Archive {
   bool (*stat)(struct Archive* archive, const char* path, FileInfo* info);
   void (*list)(struct Archive* archive, const char* path, fs_list_cb callback, void* context);
   bool (*read)(struct Archive* archive, const char* path, size_t bytes, size_t* bytesRead, void** data);
-  bool (*close)(struct Archive* archive);
+  void (*close)(struct Archive* archive);
   zip_state zip;
   strpool strings;
   arr_t(zip_node) nodes;
@@ -177,8 +177,12 @@ bool lovrFilesystemMount(const char* path, const char* mountpoint, bool append, 
   archive.path = strpool_append(&archive.strings, path, archive.pathLength);
 
   if (mountpoint) {
-    archive.mountpointLength = strlen(mountpoint);
-    archive.mountpoint = strpool_append(&archive.strings, mountpoint, archive.mountpointLength);
+    char buffer[LOVR_PATH_MAX];
+    size_t length = strlen(mountpoint);
+    if (length >= sizeof(buffer)) return false;
+    length = normalize(buffer, mountpoint, length);
+    archive.mountpointLength = length;
+    archive.mountpoint = strpool_append(&archive.strings, buffer, archive.mountpointLength);
   } else {
     archive.mountpointLength = 0;
     archive.mountpoint = 0;
@@ -403,7 +407,11 @@ void lovrFilesystemSetCRequirePath(const char* requirePath) {
 // Archive: dir
 
 static bool dir_resolve(char* buffer, Archive* archive, const char* path) {
+  char innerBuffer[LOVR_PATH_MAX];
   size_t length = strlen(path);
+  if (length >= sizeof(innerBuffer)) return NULL;
+  length = normalize(innerBuffer, path, length);
+  path = innerBuffer;
 
   if (archive->mountpoint) {
     if (strncmp(path, strpool_resolve(&archive->strings, archive->mountpoint), archive->mountpointLength)) {
@@ -464,9 +472,8 @@ static bool dir_read(Archive* archive, const char* path, size_t bytes, size_t* b
   return true;
 }
 
-static bool dir_close(Archive* archive) {
+static void dir_close(Archive* archive) {
   arr_free(&archive->strings);
-  return true;
 }
 
 static bool dir_init(Archive* archive, const char* path, const char* mountpoint, const char* root) {
@@ -487,7 +494,7 @@ static bool dir_init(Archive* archive, const char* path, const char* mountpoint,
 static zip_node* zip_lookup(Archive* archive, const char* path) {
   char buffer[LOVR_PATH_MAX];
   size_t length = strlen(path);
-  if (length > sizeof(buffer)) return NULL;
+  if (length >= sizeof(buffer)) return NULL;
   length = normalize(buffer, path, length);
   uint64_t hash = hash64(buffer, length);
   uint64_t index = map_get(&archive->lookup, hash);
@@ -567,11 +574,11 @@ static bool zip_read(Archive* archive, const char* path, size_t bytes, size_t* b
   return true;
 }
 
-static bool zip_close(Archive* archive) {
+static void zip_close(Archive* archive) {
   arr_free(&archive->nodes);
   map_free(&archive->lookup);
   arr_free(&archive->strings);
-  return fs_unmap(archive->zip.data, archive->zip.size);
+  if (archive->zip.data) fs_unmap(archive->zip.data, archive->zip.size);
 }
 
 static bool zip_init(Archive* archive, const char* filename, const char* mountpoint, const char* root) {
