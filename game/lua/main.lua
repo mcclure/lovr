@@ -27,19 +27,17 @@ do
 	require "engine.loc"
 
 	require "engine.ent"
+	space.ent.strictInsert = true -- Do not allow insert() to default to ent.root
 	space.ent.singleThread = singleThread
 	require "engine.common_ent"
 	require "engine.lovr"
 	require "engine.mode"
 end
 
---[[
--- Suggest you create a namespace for your game here, like:
-namespace.prepare("gamename", "standard", function(space)
-	require "engine.gamename.types"
-	require "engine.gamename.level"
+namespace.prepare("midi", "standard", function(space)
+	space.midi = require "ext.midi"
+	require "midi.support.types"
 end)
---]]
 
 -- Ent driver
 -- Pass an app load point or a list of them as cmdline args or defaultApp will run
@@ -57,6 +55,7 @@ end
 function lovr.update(dt)
 	ent.root:route("onUpdate", dt)
 	entity_cleanup()
+	lovr.timer.sleep(0.05)
 end
 
 function lovr.draw()
