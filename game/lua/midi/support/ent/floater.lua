@@ -15,6 +15,7 @@ function FloaterEnt:onLoad()
 		end
 		self[self.target] = fn
 	end
+	self.material = self.material or 'fill'
 end
 
 function FloaterEnt:willRender()
@@ -29,8 +30,11 @@ function FloaterEnt:render()
 
 	local x,y,z = self.at:unpack()
 	local w,h = self.size:unpack()
+	local u,v,uW,vH
+	if self.uv then u,v = self.uv:unpack() end
+	if self.uvSize then uW,vH = self.uvSize:unpack() end
 	self:willRender()
-	lovr.graphics.plane('fill', x,y,z,w,h)
+	lovr.graphics.plane(self.material, x,y,z,w,h, 0,0,1,0, u,v,uW,vH)
 	self:didRender()
 
 	if self.transform then lovr.graphics.pop() end
