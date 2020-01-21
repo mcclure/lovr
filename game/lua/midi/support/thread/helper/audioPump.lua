@@ -6,6 +6,7 @@ lovrRequire("thread")
 lovrRequire("data")
 
 local AudioPump = classNamed("AudioPump")
+local extaudio = require "ext.audio" -- Only used for copy blob
 
 -- Note: Will malfunction if "nil" is sent
 -- spec:
@@ -15,11 +16,12 @@ function AudioPump:_init(spec)
 	pull(self, spec)
 	local name = stringTag(self.name, self.tag)
 	local audioName = name .. "-callback"
+	local scopeName = name .. "-scope"
 
 	self.audioSend = self.audioSend or lovr.thread.getChannel(audioName.."-dn")
 	self.audioRecv = self.audioRecv or lovr.thread.getChannel(audioName.."-up")
-	self.scopeSend = self.channelSend or lovr.thread.getChannel(name.."-dn")
-	self.scopeRecv = self.channelRecv or lovr.thread.getChannel(name.."-up")
+	self.scopeSend = self.channelSend or lovr.thread.getChannel(scopeName.."-dn")
+	self.scopeRecv = self.channelRecv or lovr.thread.getChannel(scopeName.."-up")
 	self.channelSend = self.channelSend or lovr.thread.getChannel(name.."-dn")
 	self.channelRecv = self.channelRecv or lovr.thread.getChannel(name.."-up")
 end
@@ -29,7 +31,8 @@ function AudioPump:run()
 	while true do
 		local kind, any
 
-		while true do -- TODO: Break after say 10 msgs? Or a certain amount of time?
+		while true do -- TODO: Break and do some audio after say 10 msgs handled? Or a certain amount of time?
+			-- Handle control messages
 			kind, any = self.channelRecv:pop(false) -- TODO: Like with Pump: id first, to support cancel?
 			if not any then break end
 			if kind == "die" then return end
@@ -51,6 +54,8 @@ function AudioPump:run()
 				self.channelSend:push(v, false)
 			end
 		end
+
+		-- Create audio
 		blob = self.audioRecv:pop(0.1)
 		if blob then
 			if type(blob) == "string" then error(blob) end -- Halt
@@ -58,6 +63,17 @@ function AudioPump:run()
 			if blob == nil then error("Generator returned nil") end
 			if blob == false then return end
 			self.audioSend:push(blob)
+
+			-- Service audio scope
+			local scopeBlob
+			if self.inited then
+				scopeBlob = self.scopeRecv:pop(false)
+				if scopeBlob then extaudio.blobCopy(scopeBlob, blob) end
+			else
+				scopeBlob = lovr.data.newBlob(blob)
+				self.inited = true
+			end
+			if scopeBlob then self.scopeSend:push(scopeBlob) end
 		end
 	end
 end

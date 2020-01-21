@@ -3,8 +3,6 @@ namespace ("sawtooth", "minimal")
 
 local ffi = require("ffi")
 
-local shortptr = "short*"
-
 local Generator = classNamed("Generator")
 
 function Generator:_init()
@@ -55,7 +53,7 @@ function Generator:audio(blob)
 	local bytes = blob:getSize()
 	local samples = bytes/2
 	local _ptr = blob:getPointer()
-	local ptr = ffi.cast(shortptr, _ptr)
+	local ptr = ffi.cast("short*", _ptr)
 
 	for i,v in ipairs(self.gens) do v:pre(self.gens[i-1]) end
 

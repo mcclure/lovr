@@ -193,9 +193,19 @@ static int l_audioStop(lua_State *L) {
   return 0;
 }
 
+static int l_blobCopy(lua_State *L) {
+  Blob* a = luax_checktype(L, 1, Blob);
+  Blob* b = luax_checktype(L, 2, Blob);
+  int len = MIN(a->size, b->size);
+  memcpy(a->data, b->data, len);
+  return 0;
+}
+
 const luaL_Reg audioLua[] = {
   { "start", l_audioStart },
   { "stop", l_audioStop },
+
+  { "blobCopy", l_blobCopy },
   { NULL, NULL }
 };
 
