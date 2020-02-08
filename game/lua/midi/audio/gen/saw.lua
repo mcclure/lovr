@@ -62,7 +62,7 @@ function Generator:audio(blob)
 
 	for i=1,samples do
 		local x = self.gens[1]:get(i)
-		--if self.gens[3].changes > 3 then x = x + self.gens[2]:get(i) end
+		if self.gens[1].changes > 3 then x = x + self.gens[2]:get(i) end
 		ptr[i-1] = conv( x * (self.gens[3]:get(i)+1) )
 	end
 

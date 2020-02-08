@@ -15,11 +15,8 @@ local extaudio = require "ext.audio" -- Only used for copy blob
 function AudioPump:_init(spec)
 	pull(self, spec)
 	local name = stringTag(self.name, self.tag)
-	local audioName = name .. "-callback"
 	local scopeName = name .. "-scope"
 
-	self.audioSend = self.audioSend or lovr.thread.getChannel(audioName.."-dn")
-	self.audioRecv = self.audioRecv or lovr.thread.getChannel(audioName.."-up")
 	self.scopeSend = self.channelSend or lovr.thread.getChannel(scopeName.."-dn")
 	self.scopeRecv = self.channelRecv or lovr.thread.getChannel(scopeName.."-up")
 	self.channelSend = self.channelSend or lovr.thread.getChannel(name.."-dn")
@@ -27,54 +24,51 @@ function AudioPump:_init(spec)
 end
 
 -- TODO: Some code duplication with Pump. Can they be unified?
-function AudioPump:run()
-	while true do
-		local kind, any
+function AudioPump:audio(blob)
+	local kind, any
 
-		while true do -- TODO: Break and do some audio after say 10 msgs handled? Or a certain amount of time?
-			-- Handle control messages
-			kind, any = self.channelRecv:pop(false) -- TODO: Like with Pump: id first, to support cancel?
-			if not any then break end
-			if kind == "die" then return end
+	while true do -- TODO: Break and do some audio after say 10 msgs handled? Or a certain amount of time?
+		-- Handle control messages
+		kind, any = self.channelRecv:pop(false) -- TODO: Like with Pump: id first, to support cancel?
+		if not any then break end
+		if kind == "die" then return end
 
-			local handler = self.handler[kind]
-			if not handler then error(string.format("Don't understand message %s", kind or "[nil]")) end
-			local argc, fn = unpack(handler)
+		local handler = self.handler[kind]
+		if not handler then error(string.format("Don't understand message %s", kind or "[nil]")) end
+		local argc, fn = unpack(handler)
 
-			local result
-			if argc==0 then
-				result = {fn(self)}
-			else
-				local arg = {}
-				for i=1,argc do table.insert(arg, self.channelRecv:pop(true)) end
-				result = {fn(self, unpack(arg))}
-			end
-
-			for _,v in ipairs(result) do
-				self.channelSend:push(v, false)
-			end
+		local result
+		if argc==0 then
+			result = {fn(self)}
+		else
+			local arg = {}
+			for i=1,argc do table.insert(arg, self.channelRecv:pop(true)) end
+			result = {fn(self, unpack(arg))}
 		end
 
-		-- Create audio
-		blob = self.audioRecv:pop(0.1)
-		if blob then
-			if type(blob) == "string" then error(blob) end -- Halt
-			blob = self.generator:audio(blob)
-			if blob == nil then error("Generator returned nil") end
-			if blob == false then return end
-			self.audioSend:push(blob)
-
-			-- Service audio scope
-			local scopeBlob
-			if self.inited then
-				scopeBlob = self.scopeRecv:pop(false)
-				if scopeBlob then extaudio.blobCopy(scopeBlob, blob) end
-			else
-				scopeBlob = lovr.data.newBlob(blob)
-				self.inited = true
-			end
-			if scopeBlob then self.scopeSend:push(scopeBlob) end
+		for _,v in ipairs(result) do
+			self.channelSend:push(v, false)
 		end
+	end
+
+	-- Create audio
+	if blob then
+		blob = self.generator:audio(blob)
+		if blob == nil then error("Generator returned nil") end
+		if blob == false then return false end
+
+		-- Service audio scope
+		local scopeBlob
+		if self.inited then
+			scopeBlob = self.scopeRecv:pop(false)
+			if scopeBlob then extaudio.blobCopy(scopeBlob, blob) end
+		else
+			scopeBlob = lovr.data.newBlob(blob)
+			self.inited = true
+		end
+		if scopeBlob then self.scopeSend:push(scopeBlob) end
+
+		return blob
 	end
 end
 

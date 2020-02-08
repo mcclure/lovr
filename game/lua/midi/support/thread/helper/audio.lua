@@ -10,8 +10,12 @@ local AudioPump = require "midi.support.thread.helper.audioPump"
 local Generator = require(generatorPath)
 local generator = Generator{}
 
-AudioPump{
+local pump = AudioPump{
 	name="audio", tag=tag,
 	generator=generator,
 	handler=generator.getHandlers and generator.getHandlers() or {}
-}:run()
+}
+
+function lovr.audio(blob)
+	return pump:audio(blob)
+end

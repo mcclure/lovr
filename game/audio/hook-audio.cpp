@@ -29,31 +29,42 @@ struct {
 	mtx_t lock;
 	bool dirty;
 	int channels;
-	std::string run;
+	Thread *thread;
 } pass;
 
 struct {
 	bool dead; // TODO: Some kind of reset protocol
 	int channels;
-	std::string run;
-	Channel* send;
-	Channel* recv;
+	Thread* thread;
+	lua_State *L;
 	size_t bufferTrueLength;
 	Blob *buffer;              // TODO: DON'T USE STATIC STORAGE, USE LOVRALLOC
 } state;
 
 extern "C" {
 
+lua_State *threadSetup(Thread *thread);
+void threadError(Thread *thread, lua_State*L);
+
 int EmptyAudio(int16_t *output, int frameCount) {
 	memset(output, 0, frameCount*sizeof(int16_t));
 	return 1;
 }
 
-int CrashAndReturnEmpty(Channel *send, std::string err, int16_t *output, int frameCount) {
+int CrashAndReturnEmpty(Thread *thread, std::string err, int16_t *output, int frameCount) {
 	err = "Audio render thread: " + err;
-	Variant variant; variant.type = TYPE_STRING; variant.value.string = strdup(err.c_str()); // l_thread_channel will dealloc
-	uint64_t dummy;
-	lovrChannelPush(send, &variant, -1, &dummy);
+	mtx_lock(&thread->lock); // DUPLICATE CODE WITH l_thread.c
+	thread->error = (char *)malloc(err.length() + 1);
+	if (thread->error) {
+		memcpy(thread->error, err.c_str(), err.length() + 1);
+		lovrEventPush((Event) {
+			.type = EVENT_THREAD_ERROR,
+			.data.thread = { thread, thread->error }
+		});
+	}
+	thread->running = false;
+	state.dead = true;
+	mtx_unlock(&thread->lock);
 	return EmptyAudio(output, frameCount);
 }
 
@@ -66,22 +77,23 @@ int RenderAudio(int16_t *output, unsigned long frameCount) {
 
 		mtx_lock(&pass.lock);
 		pass.dirty = false;
-		reset = state.run != pass.run || state.channels != pass.channels;
-		if (reset) { state.run = pass.run; state.channels = pass.channels; }
+		reset = state.thread != pass.thread || state.channels != pass.channels;
+		Thread *newThread;
+		if (reset) { newThread = pass.thread; state.channels = pass.channels; }
 		mtx_unlock(&pass.lock);
 
 		if (reset) {
-			lovrRelease(Channel, state.send); state.send = NULL;
-			lovrRelease(Channel, state.recv); state.recv = NULL;
-			if (!state.run.empty()) {
-				std::string send = state.run + "-up";
-				std::string recv = state.run + "-dn";
-				state.send = lovrThreadGetChannel(send.c_str()); lovrRetain(state.send); lovrChannelClear(state.send);
-				state.recv = lovrThreadGetChannel(recv.c_str()); lovrRetain(state.recv); lovrChannelClear(state.recv);
+			if (state.thread) {
+				// TODO shutdown thread
+			}
+
+			if (newThread) {
+				state.L = threadSetup(newThread);
+				state.thread = state.L ? newThread : NULL;
 			}
 		}
 	}
-	if (!state.send) return EmptyAudio(output, frameCount);
+	if (!state.thread) return EmptyAudio(output, frameCount);
 
 	if (frameCount > state.bufferTrueLength) {
 		lovrRelease(Blob, state.buffer);
@@ -90,18 +102,53 @@ int RenderAudio(int16_t *output, unsigned long frameCount) {
 	}
 	void *bufferDataWas = state.buffer->data;
 	state.buffer->size = frameCount*sizeof(int16_t);
-	Variant variant; variant.type = TYPE_OBJECT;
-	variant.value.object.pointer = state.buffer;
-	variant.value.object.type = "Blob";
-	variant.value.object.destructor = lovrBlobDestroy;
-	uint64_t dummy;
-	lovrChannelPush(state.send, &variant, -1, &dummy);
-	bool popResult = lovrChannelPop(state.recv, &variant, 0.1);
-	if (!popResult)
-		return CrashAndReturnEmpty(state.send, "Audio request timed out", output, frameCount);
-	if (variant.type != TYPE_OBJECT || strcmp("Blob", variant.value.object.type))
-		return CrashAndReturnEmpty(state.send, "Audio request response of wrong type", output, frameCount);
-	Blob *resultBlob = (Blob*)variant.value.object.pointer;
+
+	Blob *resultBlob = NULL;
+	bool resultNil = false;
+	int blobProgress = 0;
+	lua_getglobal(state.L, "lovr");
+	if (!lua_isnoneornil(state.L, -1)) {
+		blobProgress++;
+		lua_getfield(state.L, -1, "audio");
+		if (!lua_isnoneornil(state.L, -1)) {
+			blobProgress++;
+			Variant variant; variant.type = TYPE_OBJECT;
+			variant.value.object.pointer = state.buffer;
+			variant.value.object.type = "Blob";
+			variant.value.object.destructor = lovrBlobDestroy;
+
+			luax_pushvariant(state.L, &variant);
+			int result = lua_pcall (state.L, 1, 1, 0);
+
+			if (result) {
+				// Failure
+				threadError(state.thread, state.L);
+				state.dead = true;
+			} else {
+				blobProgress++;
+				resultNil = lua_isnil(state.L, -1);
+				if (!resultNil) {
+					resultBlob = luax_totype(state.L, -1, Blob);
+					lovrRetain(resultBlob);
+				}
+				lua_settop(state.L, 0);
+			}
+		}
+	}
+	if (resultNil)
+		return EmptyAudio(output, frameCount);
+	if (!resultBlob) {
+		switch (blobProgress) {
+			case 0:
+				return CrashAndReturnEmpty(state.thread, "No lovr object in audio thread global scope", output, frameCount);
+			case 1:
+				return CrashAndReturnEmpty(state.thread, "No lovr.audio in audio thread", output, frameCount);
+			case 2:
+				return EmptyAudio(output, frameCount);
+			default:
+				return CrashAndReturnEmpty(state.thread, "lovr.audio returned wrong type", output, frameCount);
+		}
+	}
 	int resultSize = std::min(resultBlob->size/sizeof(int16_t), frameCount);
 	memcpy(output, resultBlob->data, resultSize*sizeof(int16_t));
 	if (resultBlob != state.buffer) {
@@ -136,7 +183,13 @@ int PaRenderAudio(const void *input, void *output, unsigned long frameCount, con
 #endif
 
 static int l_audioStart(lua_State *L) {
-  const char *name = luaL_checkstring(L, 1);
+  Thread* thread = luax_checktype(L, 1, Thread);
+  lovrAssert(!lovrThreadIsRunning(thread), "Thread for audio is already started");
+
+  thread->argumentCount = MIN(MAX_THREAD_ARGUMENTS, lua_gettop(L) - 1);
+  for (size_t i = 0; i < thread->argumentCount; i++) {
+    luax_checkvariant(L, 2 + i, &thread->arguments[i]);
+  }
 
   if (pass.threadUp) {
   	mtx_lock(&pass.lock);
@@ -181,7 +234,7 @@ lovrLog("DEFAULT LOW LATENCY: %d\n", (int)(outInfo?outInfo->defaultLowOutputLate
   }
 
   pass.dirty = true;
-  pass.run = name;
+  pass.thread = thread;
 
   mtx_unlock(&pass.lock);
   return 0;

@@ -21,11 +21,12 @@ function Audio:args()
 end
 
 function Audio:insert(parent)
-	PumpEnt.insert(self, parent)
-
+	self.thread = lovr.thread.newThread(self.boot)
 	local audio = require "ext.audio"
 	local audioName = stringTag(self.name, self.tag) .. "-callback"
-	audio.start(audioName)
+	audio.start(self.thread, self.tag, self:args())
+
+	PumpEnt.insert(self, parent)
 end
 
 return Audio

@@ -6,10 +6,23 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int threadRunner(void* data) {
-  Thread* thread = (Thread*) data;
+void threadError(Thread *thread, lua_State*L) {
+  size_t length;
+  const char* error = lua_tolstring(L, -1, &length);
+  mtx_lock(&thread->lock);
+  thread->error = malloc(length + 1);
+  if (thread->error) {
+    memcpy(thread->error, error, length + 1);
+    lovrEventPush((Event) {
+      .type = EVENT_THREAD_ERROR,
+      .data.thread = { thread, thread->error }
+    });
+  }
+  thread->running = false;
+  mtx_unlock(&thread->lock);
+}
 
-  lovrRetain(thread);
+lua_State *threadSetup(Thread *thread) {
   mtx_lock(&thread->lock);
   thread->running = true;
   mtx_unlock(&thread->lock);
@@ -29,32 +42,35 @@ static int threadRunner(void* data) {
     }
 
     if (!lua_pcall(L, thread->argumentCount, 0, 0)) {
-      mtx_lock(&thread->lock);
-      thread->running = false;
-      mtx_unlock(&thread->lock);
-      lovrRelease(Thread, thread);
-      lua_close(L);
-      return 0;
+      return L; // Success
     }
   }
 
-  // Error handling
-  size_t length;
-  const char* error = lua_tolstring(L, -1, &length);
-  mtx_lock(&thread->lock);
-  thread->error = malloc(length + 1);
-  if (thread->error) {
-    memcpy(thread->error, error, length + 1);
-    lovrEventPush((Event) {
-      .type = EVENT_THREAD_ERROR,
-      .data.thread = { thread, thread->error }
-    });
+  // Still here, error handling
+  threadError(thread, L);
+
+  return NULL;
+}
+
+static int threadRunner(void* data) {
+  Thread* thread = (Thread*) data;
+
+  lovrRetain(thread);
+
+  lua_State *L = threadSetup(thread);
+
+  int result = 1;
+
+  if (L) {
+    mtx_lock(&thread->lock);
+    thread->running = false;
+    mtx_unlock(&thread->lock);
+    lua_close(L);
+    result = 0; // Success
   }
-  thread->running = false;
-  mtx_unlock(&thread->lock);
+
   lovrRelease(Thread, thread);
-  lua_close(L);
-  return 1;
+  return result;
 }
 
 static int l_lovrThreadNewThread(lua_State* L) {

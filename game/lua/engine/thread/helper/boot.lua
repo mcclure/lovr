@@ -1,6 +1,7 @@
 -- main.lua replacement for a helper thread. helpers should require this on their first line
 
 namespace = require "engine.namespace"
+lovr = lovr or {} -- Make sure this is in global, not a namespace
 
 do
 	-- Make sure this matches main.lua

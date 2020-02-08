@@ -26,6 +26,7 @@ function AudioScope:onLoad()
 	self.name = self.name or "audio"
 	local name = stringTag(self.name, self.tag)
 	local scopeName = name .. "-scope"
+
 	self.scopeSend = self.channelSend or lovr.thread.getChannel(scopeName.."-up")
 	self.scopeRecv = self.channelRecv or lovr.thread.getChannel(scopeName.."-dn")
 end

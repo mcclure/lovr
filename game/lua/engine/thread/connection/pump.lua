@@ -22,8 +22,10 @@ end
 function PumpEnt:args() end
 
 function PumpEnt:insert(parent)
-	self.thread = lovr.thread.newThread(self.boot)
-	self.thread:start(self.tag, self:args())
+	if not self.thread then
+		self.thread = lovr.thread.newThread(self.boot)
+		self.thread:start(self.tag, self:args())
+	end
 
 	self.boot = nil
 	Ent.insert(self, parent)
