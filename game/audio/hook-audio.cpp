@@ -14,6 +14,7 @@ extern "C" {
 
 #define SAMPLERATE 48000
 #define LOVR_DEBUG_AUDIOTAP 1
+#define LOVR_DEBUG_FRAMESIZE 1
 
 #ifdef LOVR_DEBUG_AUDIOTAP
 // To get a record of what the audio callback is playing, define LOVR_DEBUG_AUDIOTAP,
@@ -39,6 +40,9 @@ struct {
 	lua_State *L;
 	size_t bufferTrueLength;
 	Blob *buffer;              // TODO: DON'T USE STATIC STORAGE, USE LOVRALLOC
+#if LOVR_DEBUG_FRAMESIZE
+	int frame;
+#endif
 } state;
 
 extern "C" {
@@ -71,6 +75,11 @@ int CrashAndReturnEmpty(Thread *thread, std::string err, int16_t *output, int fr
 static const char *audioBlobName = "Audio thread output";
 
 int RenderAudio(int16_t *output, unsigned long frameCount) {
+#if LOVR_DEBUG_FRAMESIZE
+	if (state.frame == 4)
+		lovrLog("Rendering audio, typical frame size %d\n", (int)frameCount);
+	state.frame++;
+#endif
 	if (state.dead) return EmptyAudio(output, frameCount);
 	if (pass.dirty) {
 		bool reset = false;

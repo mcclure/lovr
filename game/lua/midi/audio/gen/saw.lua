@@ -50,7 +50,7 @@ function SawSource:post(lasti)
 end
 
 function Generator:audio(blob)
-	if not self.gens then self.gens = {SawSource(), SawSource(), SawSource()} end
+	if not self.gens then self.gens = {SawSource(), SawSource(), SawSource(), SawSource(), SawSource()} end
 	self.gens[3].factor = 1/100
 
 	local bytes = blob:getSize()
@@ -61,8 +61,8 @@ function Generator:audio(blob)
 	for i,v in ipairs(self.gens) do v:pre(self.gens[i-1]) end
 
 	for i=1,samples do
-		local x = self.gens[1]:get(i)
-		if self.gens[1].changes > 3 then x = x + self.gens[2]:get(i) end
+		local x = self.gens[1]:get(i + self.gens[4]:get(i)*50)
+		if self.gens[1].changes > 3 then x = x + self.gens[2]:get(i + self.gens[4]:get(i)*100) end
 		ptr[i-1] = conv( x * (self.gens[3]:get(i)+1) )
 	end
 
