@@ -19,14 +19,19 @@ typedef enum {
   DRIVER_OCULUS_MOBILE,
   DRIVER_OPENVR,
   DRIVER_OPENXR,
-  DRIVER_WEBVR
+  DRIVER_WEBVR,
+  DRIVER_GAMEPAD,
 } HeadsetDriver;
 
 typedef enum {
   DEVICE_HEAD,
   DEVICE_HAND_LEFT,
   DEVICE_HAND_RIGHT,
-  MAX_DEVICES
+  DEVICE_GAMEPAD_1,
+  MAX_DEVICES,
+
+  DEVICE_GAMEPAD_FIRST = DEVICE_GAMEPAD_1,
+  DEVICE_GAMEPAD_LAST = DEVICE_GAMEPAD_1,
 } Device;
 
 typedef enum {
@@ -85,6 +90,7 @@ extern HeadsetInterface lovrHeadsetWebVRDriver;
 extern HeadsetInterface lovrHeadsetDesktopDriver;
 extern HeadsetInterface lovrHeadsetOculusMobileDriver;
 extern HeadsetInterface lovrHeadsetLeapMotionDriver;
+extern HeadsetInterface lovrHeadsetGamepadDriver;
 
 // Active drivers
 extern HeadsetInterface* lovrHeadsetDriver;
