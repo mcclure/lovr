@@ -21,7 +21,7 @@ function TestUi:onLoad()
 	local layout = ui2.PileLayout{managed=ents, parent=self}
 	layout:layout()
 
-	self.audio = Audio{generator="midi.audio.gen.sawRandom"}:insert(self)
+	self.audio = Audio{generator="midi.audio.gen.saw"}:insert(self)
 
 	AudioScope{target="onMirror"}:insert(self)
 end
