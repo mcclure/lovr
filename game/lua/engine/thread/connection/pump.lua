@@ -22,13 +22,13 @@ end
 function PumpEnt:args() end
 
 function PumpEnt:insert(parent)
-	if not self.thread then
+	if self.boot and not self.thread then
 		self.thread = lovr.thread.newThread(self.boot)
 		self.thread:start(self.tag, self:args())
 	end
 
 	self.boot = nil
-	Ent.insert(self, parent)
+	return Ent.insert(self, parent)
 end
 
 function PumpEnt:connect()
@@ -72,7 +72,7 @@ function PumpEnt:onUpdate()
 end
 
 function PumpEnt:send(kind, ...)
-	local handler = self.handler[kind]
+	local handler = self.handler and self.handler[kind]
 	local needHandleResponse = handler and handler[1] > 0
 
 	local arg = {...}

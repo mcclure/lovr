@@ -26,7 +26,7 @@ function Audio:insert(parent)
 	local audioName = stringTag(self.name, self.tag) .. "-callback"
 	audio.start(self.thread, self.tag, self:args())
 
-	PumpEnt.insert(self, parent)
+	return PumpEnt.insert(self, parent)
 end
 
 return Audio

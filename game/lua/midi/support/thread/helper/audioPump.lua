@@ -30,20 +30,27 @@ function AudioPump:audio(blob)
 	while true do -- TODO: Break and do some audio after say 10 msgs handled? Or a certain amount of time?
 		-- Handle control messages
 		kind, any = self.channelRecv:pop(false) -- TODO: Like with Pump: id first, to support cancel?
-		if not any then break end
+		if not kind then break end
 		if kind == "die" then return end
 
+		local rpcTarget = self
 		local handler = self.handler[kind]
-		if not handler then error(string.format("Don't understand message %s", kind or "[nil]")) end
+		if not handler then
+			rpcTarget = self.generator 
+			handler = self.generator.handler and self.generator:handler(kind)
+			if not handler then
+				error(string.format("Don't understand message %s", kind or "[nil]"))
+			end
+		end
 		local argc, fn = unpack(handler)
 
 		local result
 		if argc==0 then
-			result = {fn(self)}
+			result = {fn(rpcTarget)}
 		else
 			local arg = {}
 			for i=1,argc do table.insert(arg, self.channelRecv:pop(true)) end
-			result = {fn(self, unpack(arg))}
+			result = {fn(rpcTarget, unpack(arg))}
 		end
 
 		for _,v in ipairs(result) do
