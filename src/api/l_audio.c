@@ -85,7 +85,7 @@ int luaopen_lovr_audio(lua_State* L) {
   lua_newtable(L);
   luaL_register(L, NULL, lovrAudio);
   luax_registertype(L, Source);
-  AudioConfig config[2];
+  AudioConfig config[2] = { { .enable = true, .start = true }, { .enable = true, .start = true } };
   if (lovrAudioInit(config)) {
     luax_atexit(L, lovrAudioDestroy);
   }
