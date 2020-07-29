@@ -38,6 +38,29 @@ function forwardLine(at, q)
 	return offsetLine(at, q, vec3(0,0,-6))
 end
 
+-- Given a ShaderBlock, a blob and a variable name, get the float pointer for that variable's array
+local ffi = require "ffi"
+function blockBlobPointer(blob, block, name, typeName)
+	local offset = name and block:getOffset(name) or 0
+	local charPointer = ffi.cast("char*",blob:getPointer())
+	return ffi.cast(typeName or "float*",charPointer + offset)
+end
+
+-- Given a blob, extract a range into a table array
+function blobRangeToTable(blob, offset, len, block, name, typeName)
+	local ptr
+	if name then
+		ptr = blockBlobPtr(block, blob, offset, len, name, typeName)
+	else
+		ptr = ffi.cast(typeName or "float*",blob:getPointer())
+	end
+	local result = {}
+	for i=1,len do
+		table.insert(result, ptr[offset+i-1])
+	end
+	return result
+end
+
 -- The basic thumb directional may be either "touchpad" or "thumbstick" depending on unit.
 -- These wrappers provide touched, down, and axis information for whichever the controller has (assuming only one is present)
 

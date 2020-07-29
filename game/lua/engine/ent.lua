@@ -9,6 +9,7 @@ require "engine.types"
 
 ent = {inputLevel = 1} -- State used by ent class
 route_terminate = {} -- A special value, return from an event and your children will not be called
+route_poison = {}
 
 local doomed = {}
 
@@ -55,9 +56,12 @@ function Ent:route(key, ...)
 	if self[key] then
 		result = self[key](self, ...)
 	end
+	if result == route_poison then return route_poison end
 	if result ~= route_terminate then
 		for k,v in pairs(self.kids) do
-			v:route(key, ...)
+			local result2 = v:route(key, ...)
+
+			if result2 == route_poison then return route_poison end
 		end
 	end
 end
@@ -142,10 +146,15 @@ function OrderedEnt:route(key, payload) -- TODO: Repetitive with Ent:route()?
 	if self[key] then
 		result = self[key](self, payload)
 	end
+	if result == route_poison then return route_poison end
 	if result ~= route_terminate then
 		for _,id in ipairs(self.kidOrder) do
 			local v = self.kids[id]
-			if v then v:route(key, payload) end
+			if v then
+				local result2 = v:route(key, payload)
+
+				if result2 == route_poison then return route_poison end
+			end
 		end
 	end
 end

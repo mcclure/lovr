@@ -107,6 +107,17 @@ function quat.from_direction(normal, up)
 	return new(a.x, a.y, a.z, d + 1)
 end
 
+--- Create a random unit quaternion representing normal distribution of rotations
+-- @treturn quat out
+function quat.from_random_rotation()
+	-- Formula from http://planning.cs.uiuc.edu/node198.html
+	local u,v,w = math.random(), math.random(), math.random()
+	return new( math.sqrt(1-u)*math.sin(2*v*math.pi),
+		        math.sqrt(1-u)*math.cos(2*v*math.pi),
+		        math.sqrt(u)*math.sin(2*w*math.pi),
+		        math.sqrt(u)*math.cos(2*w*math.pi) )
+end
+
 --- Clone a quaternion.
 -- @tparam quat a Quaternion to clone
 -- @treturn quat out
@@ -364,13 +375,25 @@ end
 
 --- Convert a quaternion into an angle plus axis components.
 -- @tparam quat a Quaternion to convert
+-- @tparam identityAxis vec3 of axis to use on identity/degenerate quaternions (optional, default returns 0,0,0,1)
 -- @treturn number angle
 -- @treturn x axis-x
 -- @treturn y axis-y
 -- @treturn z axis-z
-function quat.to_angle_axis_unpack(a)
+function quat.to_angle_axis_unpack(a, identityAxis)
 	if a.w > 1 or a.w < -1 then
 		a = a:normalize()
+	end
+
+	-- If length of xyz components is less than DBL_EPSILON, this is zero or close enough (an identity quaternion)
+	-- Normally an identity quat would return a nonsense answer, so we return an arbitrary zero rotation early.
+	-- FIXME: Is it safe to assume there are *no* valid quaternions with nonzero degenerate lengths?
+	if a.x*a.x + a.y*a.y + a.z*a.z < constants.DBL_EPSILON*constants.DBL_EPSILON then
+		if identityAxis then
+			return 0,identityAxis:unpack()
+		else
+			return 0,0,0,1
+		end
 	end
 
 	local x, y, z
@@ -392,11 +415,47 @@ end
 
 --- Convert a quaternion into an angle/axis pair.
 -- @tparam quat a Quaternion to convert
+-- @tparam identityAxis vec3 of axis to use on identity/degenerate quaternions (optional, default returns 0,vec3(0,0,1))
 -- @treturn number angle
 -- @treturn vec3 axis
-function quat.to_angle_axis(a)
-	local angle, x, y, z = a:to_angle_axis_unpack()
+function quat.to_angle_axis(a, identityAxis)
+	local angle, x, y, z = a:to_angle_axis_unpack(identityAxis)
 	return angle, vec3(x, y, z)
+end
+
+--- Convert a quaternion into euler angle components
+-- @tparam quat a Quaternion to convert
+-- @treturn roll
+-- @treturn pitch
+-- @treturn yaw
+function quat.to_euler_angles_unpack(q)
+    -- roll (x-axis rotation)
+    local sinr_cosp = 2 * (q.w * q.x + q.y * q.z)
+    local cosr_cosp = 1 - 2 * (q.x * q.x + q.y * q.y)
+    local roll = math.atan2(sinr_cosp, cosr_cosp)
+
+    -- pitch (y-axis rotation)
+    local sinp = 2 * (q.w * q.y - q.z * q.x)
+    local pitch
+    if math.abs(sinp) >= 1 then
+        pitch = math.pi / 2 * ((sinp > 0) and 1 or -1) -- Use 90 degrees if out of range
+    else
+        pitch = math.asin(sinp)
+    end
+
+    -- yaw (z-axis rotation)
+    local siny_cosp = 2 * (q.w * q.z + q.x * q.y)
+    local cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
+    local yaw = math.atan2(siny_cosp, cosy_cosp)
+
+    return roll, pitch, yaw
+end
+
+--- Convert a quaternion into euler angles
+-- @tparam quat a Quaternion to convert
+-- @treturn result a {roll, pitch, yaw} table
+function quat.to_euler_angles(a)
+	return {quat.to_euler_angles_unpack(a)}
 end
 
 --- Convert a quaternion into a vec3.
@@ -465,7 +524,9 @@ function quat_mt.__pow(a, n)
 end
 
 if status then
-	ffi.metatype(new, quat_mt)
+	xpcall(function() -- Allow this to silently fail; assume failure means someone messed with package.loaded
+		ffi.metatype(new, quat_mt)
+	end, function() end)
 end
 
 return setmetatable({}, quat_mt)

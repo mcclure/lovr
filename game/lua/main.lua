@@ -21,7 +21,7 @@ do
 	local space = namespace.space("standard", "minimal")
 
 	space.cpml = require "cpml"
-	for _,v in ipairs{"bound2", "bound3", "vec2", "vec3", "quat", "mat4", "color", "utils"} do
+	for _,v in ipairs{"bound2", "bound3", "vec2", "vec3", "quat", "mat4", "intersect", "color", "utils"} do
 		space[v] = space.cpml[v]
 	end
 	require "engine.loc"
