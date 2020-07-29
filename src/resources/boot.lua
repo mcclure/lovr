@@ -192,6 +192,7 @@ function lovr.mirror()
     local texture = lovr.headset.getMirrorTexture()
     if texture then    -- On some drivers, texture is printed directly to the window
       if lovr.headset.getDriver() == 'oculus' then
+        lovr.graphics.clear(0,0,0,1)
         lovr.graphics.fill(lovr.headset.getMirrorTexture(), 0, 1, 1, -1)
       else
         lovr.graphics.fill(lovr.headset.getMirrorTexture())

@@ -33,7 +33,20 @@ static struct {
   float pitch;
   float yaw;
   float fov;
+
+  bool kbamBlocked;
 } state;
+
+bool lovrHeadsetGetFakeKbamBlocked() {
+  return state.kbamBlocked;
+}
+void lovrHeadsetFakeKbamBlock(bool block, bool silent) {
+  if (block != state.kbamBlocked) {
+    if (!silent)
+      lovrLog("%s fake headset keyboard/mouse controls\n", block?"Disabling":"Re-enabling");
+    state.kbamBlocked = block;
+  }
+}
 
 static bool desktop_init(float offset, uint32_t msaa) {
   state.offset = offset;
@@ -53,7 +66,7 @@ static bool desktop_init(float offset, uint32_t msaa) {
 }
 
 static void desktop_destroy(void) {
-  //
+  state.kbamBlocked = false;
 }
 
 static bool desktop_getName(char* name, size_t length) {
@@ -93,6 +106,8 @@ static bool desktop_getViewPose(uint32_t view, float* position, float* orientati
 }
 
 static bool desktop_getViewAngles(uint32_t view, float* left, float* right, float* up, float* down) {
+  *left = -state.fov * .5f;
+  *right = state.fov * .5f;
   float aspect;
   uint32_t width, height;
   desktop_getDisplayDimensions(&width, &height);
@@ -148,6 +163,7 @@ static bool desktop_getVelocity(Device device, vec3 velocity, vec3 angularVeloci
 }
 
 static bool desktop_isDown(Device device, DeviceButton button, bool* down, bool* changed) {
+  if (state.kbamBlocked) return false;
   if (device != DEVICE_HAND_LEFT || button != BUTTON_TRIGGER) {
     return false;
   }
@@ -161,6 +177,12 @@ static bool desktop_isTouched(Device device, DeviceButton button, bool* touched)
 }
 
 static bool desktop_getAxis(Device device, DeviceAxis axis, vec3 value) {
+  bool down,changed;
+  if (axis == AXIS_TRIGGER && desktop_isDown(device, BUTTON_TRIGGER, &down, &changed) && down) {
+    value[0] = 1.0;
+    return true;
+  }
+
   return false;
 }
 
@@ -173,10 +195,14 @@ static ModelData* desktop_newModelData(Device device) {
 }
 
 static void desktop_renderTo(void (*callback)(void*), void* userdata) {
+  bool stereo = false;
+  uint32_t width, height;
+  desktop_getDisplayDimensions(&width, &height);
+  float aspect = (float) width / (float) height / (1 + stereo);
   float left, right, up, down;
   desktop_getViewAngles(0, &left, &right, &up, &down);
-  Camera camera = { .canvas = NULL, .viewMatrix = { MAT4_IDENTITY }, .stereo = true };
-  mat4_fov(camera.projection[0], tanf(left), tanf(right), tanf(up), tanf(down), state.clipNear, state.clipFar);
+  Camera camera = { .canvas = NULL, .viewMatrix = { MAT4_IDENTITY }, .stereo = stereo };
+  mat4_fov(camera.projection[0], tanf(left) * aspect, tanf(right) * aspect, tanf(up), tanf(down), state.clipNear, state.clipFar);
   mat4_multiply(camera.viewMatrix[0], state.headTransform);
   mat4_invert(camera.viewMatrix[0]);
   mat4_set(camera.projection[1], camera.projection[0]);
@@ -187,6 +213,8 @@ static void desktop_renderTo(void (*callback)(void*), void* userdata) {
 }
 
 static void desktop_update(float dt) {
+  if (state.kbamBlocked) return;
+
   bool front = lovrPlatformIsKeyDown(KEY_W) || lovrPlatformIsKeyDown(KEY_UP);
   bool back = lovrPlatformIsKeyDown(KEY_S) || lovrPlatformIsKeyDown(KEY_DOWN);
   bool left = lovrPlatformIsKeyDown(KEY_A) || lovrPlatformIsKeyDown(KEY_LEFT);
