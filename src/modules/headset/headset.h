@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "core/util.h"
+
 #pragma once
 
 #define MAX_HEADSET_BONES 32
