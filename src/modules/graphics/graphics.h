@@ -92,7 +92,7 @@ typedef struct {
 } Pipeline;
 
 // Base
-bool lovrGraphicsInit();
+bool lovrGraphicsInit(void);
 void lovrGraphicsDestroy(void);
 void lovrGraphicsPresent(void);
 void lovrGraphicsCreateWindow(WindowFlags* flags);
@@ -200,7 +200,12 @@ typedef struct {
 
 typedef struct {
   uint32_t shaderSwitches;
+  uint32_t renderPasses;
   uint32_t drawCalls;
+  uint32_t bufferCount;
+  uint32_t textureCount;
+  uint64_t bufferMemory;
+  uint64_t textureMemory;
 } GpuStats;
 
 typedef struct {

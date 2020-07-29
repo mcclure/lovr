@@ -1,4 +1,5 @@
 #include "headset/headset.h"
+#include "event/event.h"
 #include "graphics/graphics.h"
 #include "core/maf.h"
 #include "core/os.h"
@@ -6,6 +7,10 @@
 #include <math.h>
 #include <stdint.h>
 #include <stdbool.h>
+
+static void onFocus(bool focused) {
+  lovrEventPush((Event) { .type = EVENT_FOCUS, .data.boolean = { focused } });
+}
 
 static struct {
   bool initialized;
@@ -19,38 +24,36 @@ static struct {
 
   double prevCursorX;
   double prevCursorY;
+  bool mouseDown;
+  bool prevMouseDown;
 
   float offset;
   float clipNear;
   float clipFar;
   float pitch;
   float yaw;
-
-  bool kbamBlocked;
+  float fov;
 } state;
-
-void lovrHeadsetFakeKbamBlock(bool block) {
-  if (block != state.kbamBlocked) {
-    lovrLog("%s fake headset keyboard/mouse controls\n", block?"Disabling":"Re-enabling");
-    state.kbamBlocked = block;
-  }
-}
 
 static bool desktop_init(float offset, uint32_t msaa) {
   state.offset = offset;
-  state.clipNear = 0.1f;
+  state.clipNear = .1f;
   state.clipFar = 100.f;
+  state.fov = 67.f * (float) M_PI / 180.f;
 
   if (!state.initialized) {
     mat4_identity(state.headTransform);
     mat4_identity(state.leftHandTransform);
     state.initialized = true;
   }
+
+  lovrPlatformOnWindowFocus(onFocus);
+
   return true;
 }
 
 static void desktop_destroy(void) {
-  state.kbamBlocked = false;
+  //
 }
 
 static bool desktop_getName(char* name, size_t length) {
@@ -77,6 +80,28 @@ static void desktop_getDisplayDimensions(uint32_t* width, uint32_t* height) {
 static const float* desktop_getDisplayMask(uint32_t* count) {
   *count = 0;
   return NULL;
+}
+
+static uint32_t desktop_getViewCount(void) {
+  return 2;
+}
+
+static bool desktop_getViewPose(uint32_t view, float* position, float* orientation) {
+  vec3_init(position, state.position);
+  quat_fromMat4(orientation, state.headTransform);
+  return view < 2;
+}
+
+static bool desktop_getViewAngles(uint32_t view, float* left, float* right, float* up, float* down) {
+  float aspect;
+  uint32_t width, height;
+  desktop_getDisplayDimensions(&width, &height);
+  aspect = (float) width / 2.f / height;
+  *left = -state.fov * aspect * .5f;
+  *right = state.fov * aspect * .5f;
+  *up = state.fov * .5f;
+  *down = -state.fov * .5f;
+  return view < 2;
 }
 
 static void desktop_getClipDistance(float* clipNear, float* clipFar) {
@@ -122,13 +147,12 @@ static bool desktop_getVelocity(Device device, vec3 velocity, vec3 angularVeloci
   return true;
 }
 
-static bool desktop_isDown(Device device, DeviceButton button, bool* down) {
-  if (state.kbamBlocked) return false;
+static bool desktop_isDown(Device device, DeviceButton button, bool* down, bool* changed) {
   if (device != DEVICE_HAND_LEFT || button != BUTTON_TRIGGER) {
     return false;
   }
-
-  *down = lovrPlatformIsMouseDown(MOUSE_RIGHT);
+  *down = state.mouseDown;
+  *changed = state.mouseDown != state.prevMouseDown;
   return true;
 }
 
@@ -149,10 +173,10 @@ static ModelData* desktop_newModelData(Device device) {
 }
 
 static void desktop_renderTo(void (*callback)(void*), void* userdata) {
-  uint32_t width, height;
-  desktop_getDisplayDimensions(&width, &height);
-  Camera camera = { .canvas = NULL, .viewMatrix = { MAT4_IDENTITY }, .stereo = false };
-  mat4_perspective(camera.projection[0], state.clipNear, state.clipFar, 67.f * (float) M_PI / 180.f, (float) width / height);
+  float left, right, up, down;
+  desktop_getViewAngles(0, &left, &right, &up, &down);
+  Camera camera = { .canvas = NULL, .viewMatrix = { MAT4_IDENTITY }, .stereo = true };
+  mat4_fov(camera.projection[0], tanf(left), tanf(right), tanf(up), tanf(down), state.clipNear, state.clipFar);
   mat4_multiply(camera.viewMatrix[0], state.headTransform);
   mat4_invert(camera.viewMatrix[0]);
   mat4_set(camera.projection[1], camera.projection[0]);
@@ -163,8 +187,6 @@ static void desktop_renderTo(void (*callback)(void*), void* userdata) {
 }
 
 static void desktop_update(float dt) {
-  if (state.kbamBlocked) return;
-
   bool front = lovrPlatformIsKeyDown(KEY_W) || lovrPlatformIsKeyDown(KEY_UP);
   bool back = lovrPlatformIsKeyDown(KEY_S) || lovrPlatformIsKeyDown(KEY_DOWN);
   bool left = lovrPlatformIsKeyDown(KEY_A) || lovrPlatformIsKeyDown(KEY_LEFT);
@@ -177,9 +199,11 @@ static void desktop_update(float dt) {
   float damping = MAX(1.f - 20.f * dt, 0);
 
   int width, height;
-  double mx, my, aspect = 1;
+  double mx, my;
   lovrPlatformGetWindowSize(&width, &height);
   lovrPlatformGetMousePosition(&mx, &my);
+
+  double aspect = (width > 0 && height > 0) ? ((double) width / height) : 1.;
 
   // Mouse move
   if (lovrPlatformIsMouseDown(MOUSE_LEFT)) {
@@ -190,7 +214,6 @@ static void desktop_update(float dt) {
       state.prevCursorY = my;
     }
 
-    float aspect = (float) width / height;
     float dx = (float) (mx - state.prevCursorX) / ((float) width);
     float dy = (float) (my - state.prevCursorY) / ((float) height * aspect);
     state.angularVelocity[0] = dy / dt;
@@ -202,6 +225,9 @@ static void desktop_update(float dt) {
     vec3_scale(state.angularVelocity, damping);
     state.prevCursorX = state.prevCursorY = -1;
   }
+
+  state.prevMouseDown = state.mouseDown;
+  state.mouseDown = lovrPlatformIsMouseDown(MOUSE_RIGHT);
 
   // Update velocity
   state.localVelocity[0] = left ? -movespeed : (right ? movespeed : state.localVelocity[0]);
@@ -230,17 +256,16 @@ static void desktop_update(float dt) {
   double px = mx, py = my;
   if (width > 0 && height > 0) {
     // change coordinate system to -1.0 to 1.0
-    px = (px / width)*2 - 1.0;
-    py = (py / height)*2 - 1.0;
-    aspect = height/(double)width;
+    px = (px / width) * 2 - 1.0;
+    py = (py / height) * 2 - 1.0;
 
-    px +=  0.2; // neutral position = pointing towards center-ish
-    px *= 0.6; // fudged range to juuust cover pointing at the whole scene, but not outside it
+    px +=  .2; // neutral position = pointing towards center-ish
+    px *= .6; // fudged range to juuust cover pointing at the whole scene, but not outside it
   }
 
   mat4_set(state.leftHandTransform, state.headTransform);
-  double xrange = M_PI*0.2;
-  double yrange = xrange * aspect;
+  double xrange = M_PI * .2;
+  double yrange = xrange / aspect;
   mat4_translate(state.leftHandTransform, -.1f, -.1f, -0.10f);
   mat4_rotate(state.leftHandTransform, -px * xrange, 0, 1, 0);
   mat4_rotate(state.leftHandTransform, -py * yrange, 1, 0, 0);
@@ -258,6 +283,9 @@ HeadsetInterface lovrHeadsetDesktopDriver = {
   .getDisplayTime = desktop_getDisplayTime,
   .getDisplayDimensions = desktop_getDisplayDimensions,
   .getDisplayMask = desktop_getDisplayMask,
+  .getViewCount = desktop_getViewCount,
+  .getViewPose = desktop_getViewPose,
+  .getViewAngles = desktop_getViewAngles,
   .getClipDistance = desktop_getClipDistance,
   .setClipDistance = desktop_setClipDistance,
   .getBoundsDimensions = desktop_getBoundsDimensions,

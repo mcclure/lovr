@@ -150,7 +150,6 @@ Model* lovrModelCreate(ModelData* data) {
             .stride = data->buffers[attribute->buffer].stride,
             .type = attribute->type,
             .components = attribute->components,
-            .integer = j == ATTR_BONES,
             .normalized = attribute->normalized
           });
 
@@ -165,8 +164,7 @@ Model* lovrModelCreate(ModelData* data) {
         .buffer = lovrGraphicsGetIdentityBuffer(),
         .type = U8,
         .components = 1,
-        .divisor = 1,
-        .integer = true
+        .divisor = 1
       });
 
       if (primitive->indices) {
@@ -182,6 +180,12 @@ Model* lovrModelCreate(ModelData* data) {
         lovrMeshSetDrawRange(model->meshes[i], 0, attribute->count);
       }
     }
+  }
+
+  // Ensure skin bone count doesn't exceed the maximum supported limit
+  for (uint32_t i = 0; i < data->skinCount; i++) {
+    uint32_t jointCount = data->skins[i].jointCount;
+    lovrAssert(jointCount < MAX_BONES, "ModelData skin '%d' has too many joints (%d, max is %d)", i, jointCount, MAX_BONES);
   }
 
   model->localTransforms = malloc(sizeof(NodeTransform) * data->nodeCount);
@@ -357,13 +361,13 @@ void lovrModelPose(Model* model, uint32_t nodeIndex, float position[4], float ro
 void lovrModelResetPose(Model* model) {
   for (uint32_t i = 0; i < model->data->nodeCount; i++) {
     if (model->data->nodes[i].matrix) {
-      mat4_getPosition(model->data->nodes[i].transform, model->localTransforms[i].properties[PROP_TRANSLATION]);
-      mat4_getOrientation(model->data->nodes[i].transform, model->localTransforms[i].properties[PROP_ROTATION]);
-      mat4_getScale(model->data->nodes[i].transform, model->localTransforms[i].properties[PROP_SCALE]);
+      mat4_getPosition(model->data->nodes[i].transform.matrix, model->localTransforms[i].properties[PROP_TRANSLATION]);
+      mat4_getOrientation(model->data->nodes[i].transform.matrix, model->localTransforms[i].properties[PROP_ROTATION]);
+      mat4_getScale(model->data->nodes[i].transform.matrix, model->localTransforms[i].properties[PROP_SCALE]);
     } else {
-      vec3_init(model->localTransforms[i].properties[PROP_TRANSLATION], model->data->nodes[i].translation);
-      quat_init(model->localTransforms[i].properties[PROP_ROTATION], model->data->nodes[i].rotation);
-      vec3_init(model->localTransforms[i].properties[PROP_SCALE], model->data->nodes[i].scale);
+      vec3_init(model->localTransforms[i].properties[PROP_TRANSLATION], model->data->nodes[i].transform.properties.translation);
+      quat_init(model->localTransforms[i].properties[PROP_ROTATION], model->data->nodes[i].transform.properties.rotation);
+      vec3_init(model->localTransforms[i].properties[PROP_SCALE], model->data->nodes[i].transform.properties.scale);
     }
   }
 

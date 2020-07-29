@@ -21,6 +21,7 @@ option(LOVR_USE_LUAJIT "Use LuaJIT instead of Lua" ON)
 option(LOVR_USE_OPENVR "Enable the OpenVR backend for the headset module" ON)
 option(LOVR_USE_OPENXR "Enable the OpenXR backend for the headset module" OFF)
 option(LOVR_USE_WEBVR "Enable the WebVR backend for the headset module" OFF)
+option(LOVR_USE_WEBXR "Enable the WebXR backend for the headset module" OFF)
 option(LOVR_USE_OCULUS "Enable the LibOVR backend for the headset module (be sure to also set LOVR_OCULUS_PATH to point to the Oculus SDK)" OFF)
 option(LOVR_USE_OCULUS_MOBILE "Enable the Oculus Mobile (Android) backend for the headset module" OFF)
 option(LOVR_USE_DESKTOP_HEADSET "Enable the keyboard/mouse backend for the headset module" ON)
@@ -52,12 +53,15 @@ if(EMSCRIPTEN)
     "-s FORCE_FILESYSTEM=1 "
     "-s \"EXPORTED_FUNCTIONS=[ "
       "'_main','_lovrDestroy',"
+      "'_lovrCanvasCreateFromHandle',"
+      "'_lovrGraphicsSetCamera',"
       "'_webvr_onAnimationFrame',"
       "'_mat4_set','_mat4_identity','_mat4_invert','_mat4_multiply','_mat4_rotateQuat','_mat4_transform','_mat4_transformDirection',"
       "'_quat_fromMat4','_quat_getAngleAxis'"
     "]\" "
     "-s \"EXTRA_EXPORTED_RUNTIME_METHODS=['getValue','setValue']\" "
     "--js-library \"${CMAKE_CURRENT_SOURCE_DIR}/src/resources/webvr.js\" "
+    "--js-library \"${CMAKE_CURRENT_SOURCE_DIR}/src/resources/webxr.js\" "
     "--shell-file \"${CMAKE_CURRENT_SOURCE_DIR}/src/resources/lovr.html\""
   )
   if(LOVR_ENABLE_THREAD)
@@ -67,6 +71,7 @@ if(EMSCRIPTEN)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${LOVR_EMSCRIPTEN_FLAGS}")
   set(CMAKE_EXECUTABLE_SUFFIX ".html")
   set(LOVR_USE_WEBVR ON)
+  set(LOVR_USE_WEBXR ON)
   set(LOVR_USE_OPENVR OFF)
   set(LOVR_USE_OCULUS OFF)
 elseif(ANDROID)
@@ -157,7 +162,7 @@ else()
     add_subdirectory(deps/lua lua)
     include_directories(deps/lua/src ${CMAKE_BINARY_DIR}/lua)
     set(LOVR_LUA liblua_static)
-    set_target_properties(lua luac liblua liblua_static PROPERTIES EXCLUDE_FROM_ALL 1)
+    set_target_properties(lua luac PROPERTIES EXCLUDE_FROM_ALL 1)
   endif()
 endif()
 
@@ -166,6 +171,9 @@ if(LOVR_ENABLE_DATA)
   add_subdirectory(deps/msdfgen lib_msdfgen)
   include_directories(deps/msdfgen)
   set(LOVR_MSDF lib_msdfgen)
+  if(APPLE)
+    set_target_properties(lib_msdfgen PROPERTIES MACOSX_RPATH ON)
+  endif()
 endif()
 
 # ODE
@@ -277,11 +285,7 @@ if(LOVR_ENABLE_HEADSET AND LOVR_USE_OCULUS)
   if(NOT LOVR_OCULUS_PATH)
     message(FATAL_ERROR "LOVR_USE_OCULUS requires the LOVR_OCULUS_PATH to be set to the location of the Oculus Desktop SDK (LibOVR) folder")
   endif()
-  if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(OCULUS_BUILD_TYPE "Release")
-  else()
-    set(OCULUS_BUILD_TYPE "Debug")
-  endif()
+  set(OCULUS_BUILD_TYPE "Release")
   if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(OCULUS_ARCH "x64")
   else()
@@ -331,6 +335,7 @@ set(LOVR_SRC
   src/core/fs.c
   src/core/maf.c
   src/core/map.c
+  src/core/png.c
   src/core/ref.c
   src/core/utf.c
   src/core/util.c
@@ -370,8 +375,6 @@ if(LOVR_ENABLE_AUDIO)
   add_definitions(-DLOVR_ENABLE_AUDIO)
   target_sources(lovr PRIVATE
     src/modules/audio/audio.c
-    src/modules/audio/source.c
-    src/modules/audio/microphone.c
     src/api/l_audio.c
     src/api/l_audio_source.c
     src/api/l_audio_microphone.c
@@ -397,7 +400,6 @@ if(LOVR_ENABLE_DATA)
     src/api/l_data_soundData.c
     src/api/l_data_textureData.c
     src/lib/stb/stb_image.c
-    src/lib/stb/stb_image_write.c
     src/lib/stb/stb_truetype.c
     src/lib/stb/stb_vorbis.c
     src/lib/jsmn/jsmn.c
@@ -424,16 +426,11 @@ endif()
 if(LOVR_ENABLE_GRAPHICS)
   add_definitions(-DLOVR_ENABLE_GRAPHICS)
   target_sources(lovr PRIVATE
-    src/modules/graphics/buffer.c
-    src/modules/graphics/canvas.c
     src/modules/graphics/font.c
     src/modules/graphics/graphics.c
     src/modules/graphics/material.c
-    src/modules/graphics/mesh.c
     src/modules/graphics/model.c
     src/modules/graphics/opengl.c
-    src/modules/graphics/shader.c
-    src/modules/graphics/texture.c
     src/api/l_graphics.c
     src/api/l_graphics_canvas.c
     src/api/l_graphics_font.c
@@ -457,34 +454,38 @@ if(LOVR_ENABLE_HEADSET)
 
   if(LOVR_USE_OPENVR)
     add_definitions(-DLOVR_USE_OPENVR)
-    target_sources(lovr PRIVATE src/modules/headset/openvr.c)
+    target_sources(lovr PRIVATE src/modules/headset/headset_openvr.c)
     if(UNIX)
       target_compile_options(lovr PRIVATE -Wno-typedef-redefinition)
     endif()
   endif()
   if(LOVR_USE_OPENXR)
     add_definitions(-DLOVR_USE_OPENXR)
-    target_sources(lovr PRIVATE src/modules/headset/openxr.c)
+    target_sources(lovr PRIVATE src/modules/headset/headset_openxr.c)
   endif()
   if(LOVR_USE_OCULUS)
     add_definitions(-DLOVR_USE_OCULUS)
-    target_sources(lovr PRIVATE src/modules/headset/oculus.c)
+    target_sources(lovr PRIVATE src/modules/headset/headset_oculus.c)
   endif()
   if(LOVR_USE_OCULUS_MOBILE)
     add_definitions(-DLOVR_USE_OCULUS_MOBILE)
-    target_sources(lovr PRIVATE src/modules/headset/oculus_mobile.c)
+    target_sources(lovr PRIVATE src/modules/headset/headset_oculus_mobile.c)
   endif()
   if(LOVR_USE_WEBVR)
     add_definitions(-DLOVR_USE_WEBVR)
-    target_sources(lovr PRIVATE src/modules/headset/webvr.c)
+    target_sources(lovr PRIVATE src/modules/headset/headset_webvr.c)
+  endif()
+  if(LOVR_USE_WEBXR)
+    add_definitions(-DLOVR_USE_WEBXR)
+    target_sources(lovr PRIVATE src/modules/headset/headset_webxr.c)
   endif()
   if(LOVR_USE_DESKTOP_HEADSET)
     add_definitions(-DLOVR_USE_DESKTOP_HEADSET)
-    target_sources(lovr PRIVATE src/modules/headset/desktop.c)
+    target_sources(lovr PRIVATE src/modules/headset/headset_desktop.c)
   endif()
   if(LOVR_USE_LEAP)
     add_definitions(-DLOVR_USE_LEAP)
-    target_sources(lovr PRIVATE src/modules/headset/leap.c)
+    target_sources(lovr PRIVATE src/modules/headset/headset_leap.c)
   endif()
 endif()
 
@@ -578,6 +579,7 @@ if(WIN32)
   move_dll(${LOVR_MSDF})
   target_compile_definitions(lovr PRIVATE -DLOVR_GL)
 elseif(APPLE)
+  target_link_libraries(lovr objc)
   target_sources(lovr PRIVATE src/core/os_macos.c)
   target_compile_definitions(lovr PRIVATE -DLOVR_GL)
   if(LOVR_BUILD_BUNDLE)
@@ -596,6 +598,7 @@ elseif(APPLE)
     move_lib(${LOVR_ODE})
     move_lib(${LOVR_OPENAL})
     move_lib(${LOVR_OPENVR})
+    move_lib(${LOVR_MSDF})
 
     target_sources(lovr PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/resources/lovr.icns")
     set_target_properties(lovr PROPERTIES

@@ -4,6 +4,7 @@
 #include "graphics/canvas.h"
 #include "core/os.h"
 #include "core/ref.h"
+#include "event/event.h"
 #include "lib/glad/glad.h"
 #include <android/log.h>
 #include <assert.h>
@@ -18,6 +19,7 @@
 
 static struct {
   BridgeLovrDimensions displayDimensions;
+  float displayFrequency;
   BridgeLovrDevice deviceType;
   BridgeLovrVibrateFunction* vibrateFunction;
   BridgeLovrUpdateData updateData;
@@ -31,12 +33,15 @@ static struct {
 static struct {
   void (*renderCallback)(void*);
   void* renderUserdata;
+  uint32_t msaa;
   float offset;
+  Variant nextBootCookie; // Only used during restart event
 } state;
 
 // Headset driver object
 
 static bool vrapi_init(float offset, uint32_t msaa) {
+  state.msaa = msaa;
   state.offset = offset;
   return true;
 }
@@ -63,18 +68,40 @@ static HeadsetOrigin vrapi_getOriginType() {
   return ORIGIN_HEAD;
 }
 
-static double vrapi_getDisplayTime(void) {
-  return bridgeLovrMobileData.updateData.displayTime;
-}
-
 static void vrapi_getDisplayDimensions(uint32_t* width, uint32_t* height) {
   *width = bridgeLovrMobileData.displayDimensions.width;
   *height = bridgeLovrMobileData.displayDimensions.height;
 }
 
+static float vrapi_getDisplayFrequency(void) {
+  return bridgeLovrMobileData.displayFrequency;
+}
+
 static const float* vrapi_getDisplayMask(uint32_t* count) {
   *count = 0;
   return NULL;
+}
+
+static double vrapi_getDisplayTime(void) {
+  return bridgeLovrMobileData.updateData.displayTime;
+}
+
+static uint32_t vrapi_getViewCount(void) {
+  return 2;
+}
+
+static bool vrapi_getViewPose(uint32_t view, float* position, float* orientation) {
+  if (view > 1) return false;
+  float transform[16];
+  mat4_init(transform, bridgeLovrMobileData.updateData.eyeViewMatrix[view]);
+  mat4_invert(transform); // :(
+  mat4_getPosition(transform, position);
+  mat4_getOrientation(transform, orientation);
+  return true;
+}
+
+static bool vrapi_getViewAngles(uint32_t view, float* left, float* right, float* up, float* down) {
+  return false; // TODO decompose projection matrix into fov angles
 }
 
 static void vrapi_getClipDistance(float* clipNear, float* clipFar) {
@@ -86,8 +113,8 @@ static void vrapi_setClipDistance(float clipNear, float clipFar) {
 }
 
 static void vrapi_getBoundsDimensions(float* width, float* depth) {
-  *width = 0.f;
-  *depth = 0.f;
+  *width = bridgeLovrMobileData.updateData.boundsWidth;
+  *depth = bridgeLovrMobileData.updateData.boundsDepth;
 }
 
 static const float* vrapi_getBoundsGeometry(uint32_t* count) {
@@ -140,13 +167,14 @@ static bool vrapi_getVelocity(Device device, vec3 velocity, vec3 angularVelocity
   return true;
 }
 
+// Notice: Quest has a thumbstick, Go has a touchpad
 static bool buttonDown(BridgeLovrButton field, DeviceButton button, bool *result) {
   if (bridgeLovrMobileData.deviceType == BRIDGE_LOVR_DEVICE_QUEST) {
     switch (button) {
       case BUTTON_MENU: *result = field & BRIDGE_LOVR_BUTTON_MENU; break; // Technically "LMENU" but only fires on left controller
       case BUTTON_TRIGGER: *result = field & BRIDGE_LOVR_BUTTON_SHOULDER; break;
       case BUTTON_GRIP: *result = field & BRIDGE_LOVR_BUTTON_GRIP; break;
-      case BUTTON_TOUCHPAD: *result = field & BRIDGE_LOVR_BUTTON_JOYSTICK; break;
+      case BUTTON_THUMBSTICK: *result = field & BRIDGE_LOVR_BUTTON_JOYSTICK; break;
       case BUTTON_A: *result = field & BRIDGE_LOVR_BUTTON_A; break;
       case BUTTON_B: *result = field & BRIDGE_LOVR_BUTTON_B; break;
       case BUTTON_X: *result = field & BRIDGE_LOVR_BUTTON_X; break;
@@ -171,7 +199,7 @@ static bool buttonTouch(BridgeLovrTouch field, DeviceButton button, bool *result
 
   switch (button) {
     case BUTTON_TRIGGER: *result = field & (BRIDGE_LOVR_TOUCH_TRIGGER); break;
-    case BUTTON_TOUCHPAD: *result = field & (BRIDGE_LOVR_TOUCH_TOUCHPAD | BRIDGE_LOVR_TOUCH_JOYSTICK); break;
+    case BUTTON_THUMBSTICK: *result = field & (BRIDGE_LOVR_TOUCH_TOUCHPAD | BRIDGE_LOVR_TOUCH_JOYSTICK); break;
     case BUTTON_A: *result = field & BRIDGE_LOVR_TOUCH_A; break;
     case BUTTON_B: *result = field & BRIDGE_LOVR_TOUCH_B; break;
     case BUTTON_X: *result = field & BRIDGE_LOVR_TOUCH_X; break;
@@ -181,11 +209,12 @@ static bool buttonTouch(BridgeLovrTouch field, DeviceButton button, bool *result
   return true;
 }
 
-static bool vrapi_isDown(Device device, DeviceButton button, bool* down) {
+static bool vrapi_isDown(Device device, DeviceButton button, bool* down, bool* changed) {
   int idx = getHandIdx(device);
   if (idx < 0)
     return false;
 
+  buttonDown(bridgeLovrMobileData.updateData.controllers[idx].buttonChanged, button, changed);
   return buttonDown(bridgeLovrMobileData.updateData.controllers[idx].buttonDown, button, down);
 }
 
@@ -260,9 +289,13 @@ HeadsetInterface lovrHeadsetOculusMobileDriver = {
   .destroy = vrapi_destroy,
   .getName = vrapi_getName,
   .getOriginType = vrapi_getOriginType,
-  .getDisplayTime = vrapi_getDisplayTime,
   .getDisplayDimensions = vrapi_getDisplayDimensions,
+  .getDisplayFrequency = vrapi_getDisplayFrequency,
   .getDisplayMask = vrapi_getDisplayMask,
+  .getDisplayTime = vrapi_getDisplayTime,
+  .getViewCount = vrapi_getViewCount,
+  .getViewPose = vrapi_getViewPose,
+  .getViewAngles = vrapi_getViewAngles,
   .getClipDistance = vrapi_getClipDistance,
   .setClipDistance = vrapi_setClipDistance,
   .getBoundsDimensions = vrapi_getBoundsDimensions,
@@ -388,6 +421,12 @@ static void bridgeLovrInitState() {
     lua_pushvalue(L, -1); // Double at named key
     lua_setfield(L, -3, "exe");
     lua_rawseti(L, -2, -3);
+    if (state.nextBootCookie.type != TYPE_NIL) {
+      luax_pushvariant(L, &state.nextBootCookie);
+      lovrVariantDestroy(&state.nextBootCookie);
+      state.nextBootCookie.type = TYPE_NIL;
+      lua_setfield(L, -2, "restart");
+    }
 
     // Mimic the arguments "--root /assets" as parsed by lovrInit
     lua_pushliteral(L, "--root");
@@ -439,6 +478,7 @@ void bridgeLovrInit(BridgeLovrInitData *initData) {
 
   // Unpack init data
   bridgeLovrMobileData.displayDimensions = initData->suggestedEyeTexture;
+  bridgeLovrMobileData.displayFrequency = initData->displayFrequency;
   bridgeLovrMobileData.updateData.displayTime = initData->zeroDisplayTime;
   bridgeLovrMobileData.deviceType = initData->deviceType;
   bridgeLovrMobileData.vibrateFunction = initData->vibrateFunction;
@@ -479,7 +519,8 @@ void bridgeLovrUpdate(BridgeLovrUpdateData *updateData) {
   luax_clearerror(T);
   lovrSetErrorCallback(luax_vthrow, T);
   if (lua_resume(T, 1) != LUA_YIELD) {
-    if (lua_type(T, -1) == LUA_TSTRING && !strcmp(lua_tostring(T, -1), "restart")) {
+    if (lua_type(T, -2) == LUA_TSTRING && !strcmp(lua_tostring(T, -2), "restart")) {
+      luax_checkvariant(T, -1, &state.nextBootCookie);
       state.renderCallback = NULL;
       state.renderUserdata = NULL;
       lua_close(L);
@@ -507,7 +548,7 @@ void bridgeLovrDraw(BridgeLovrDrawData *drawData) {
         .depth.enabled = true,
         .depth.readable = false,
         .depth.format = FORMAT_D24S8,
-        .msaa = 4,
+        .msaa = state.msaa,
         .stereo = true,
         .mipmaps = false
       });

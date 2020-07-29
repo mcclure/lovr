@@ -1,6 +1,5 @@
 #include "api.h"
 #include "audio/audio.h"
-#include "audio/source.h"
 #include "core/maf.h"
 #include <stdbool.h>
 
@@ -28,7 +27,7 @@ static int l_lovrSourceGetCone(lua_State* L) {
 
 static int l_lovrSourceGetDuration(lua_State* L) {
   Source* source = luax_checktype(L, 1, Source);
-  TimeUnit unit = luaL_checkoption(L, 2, "seconds", TimeUnits);
+  TimeUnit unit = luax_checkenum(L, 2, TimeUnits, "seconds", "TimeUnit");
   size_t duration = lovrSourceGetDuration(source);
 
   if (unit == UNIT_SECONDS) {
@@ -101,7 +100,7 @@ static int l_lovrSourceGetSampleRate(lua_State* L) {
 
 static int l_lovrSourceGetType(lua_State* L) {
   Source* source = luax_checktype(L, 1, Source);
-  lua_pushstring(L, SourceTypes[lovrSourceGetType(source)]);
+  luax_pushenum(L, SourceTypes, lovrSourceGetType(source));
   return 1;
 }
 
@@ -134,11 +133,6 @@ static int l_lovrSourceIsLooping(lua_State* L) {
   return 1;
 }
 
-static int l_lovrSourceIsPaused(lua_State* L) {
-  lua_pushboolean(L, lovrSourceIsPaused(luax_checktype(L, 1, Source)));
-  return 1;
-}
-
 static int l_lovrSourceIsPlaying(lua_State* L) {
   lua_pushboolean(L, lovrSourceIsPlaying(luax_checktype(L, 1, Source)));
   return 1;
@@ -146,11 +140,6 @@ static int l_lovrSourceIsPlaying(lua_State* L) {
 
 static int l_lovrSourceIsRelative(lua_State* L) {
   lua_pushboolean(L, lovrSourceIsRelative(luax_checktype(L, 1, Source)));
-  return 1;
-}
-
-static int l_lovrSourceIsStopped(lua_State* L) {
-  lua_pushboolean(L, lovrSourceIsStopped(luax_checktype(L, 1, Source)));
   return 1;
 }
 
@@ -166,19 +155,9 @@ static int l_lovrSourcePlay(lua_State* L) {
   return 0;
 }
 
-static int l_lovrSourceResume(lua_State* L) {
-  lovrSourceResume(luax_checktype(L, 1, Source));
-  return 0;
-}
-
-static int l_lovrSourceRewind(lua_State* L) {
-  lovrSourceRewind(luax_checktype(L, 1, Source));
-  return 0;
-}
-
 static int l_lovrSourceSeek(lua_State* L) {
   Source* source = luax_checktype(L, 1, Source);
-  TimeUnit unit = luaL_checkoption(L, 3, "seconds", TimeUnits);
+  TimeUnit unit = luax_checkenum(L, 3, TimeUnits, "seconds", "TimeUnit");
 
   if (unit == UNIT_SECONDS) {
     float seconds = luax_checkfloat(L, 2);
@@ -278,7 +257,7 @@ static int l_lovrSourceStop(lua_State* L) {
 
 static int l_lovrSourceTell(lua_State* L) {
   Source* source = luax_checktype(L, 1, Source);
-  TimeUnit unit = luaL_checkoption(L, 2, "seconds", TimeUnits);
+  TimeUnit unit = luax_checkenum(L, 2, TimeUnits, "seconds", "TimeUnit");
   size_t offset = lovrSourceTell(source);
 
   if (unit == UNIT_SECONDS) {
@@ -306,14 +285,10 @@ const luaL_Reg lovrSource[] = {
   { "getVolume", l_lovrSourceGetVolume },
   { "getVolumeLimits", l_lovrSourceGetVolumeLimits },
   { "isLooping", l_lovrSourceIsLooping },
-  { "isPaused", l_lovrSourceIsPaused },
   { "isPlaying", l_lovrSourceIsPlaying },
   { "isRelative", l_lovrSourceIsRelative },
-  { "isStopped", l_lovrSourceIsStopped },
   { "pause", l_lovrSourcePause },
   { "play", l_lovrSourcePlay },
-  { "resume", l_lovrSourceResume },
-  { "rewind", l_lovrSourceRewind },
   { "seek", l_lovrSourceSeek },
   { "setCone", l_lovrSourceSetCone },
   { "setFalloff", l_lovrSourceSetFalloff },

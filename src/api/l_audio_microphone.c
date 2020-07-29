@@ -1,5 +1,5 @@
 #include "api.h"
-#include "audio/microphone.h"
+#include "audio/audio.h"
 #include "data/soundData.h"
 #include "core/ref.h"
 #include <stdlib.h>
@@ -17,8 +17,22 @@ static int l_lovrMicrophoneGetChannelCount(lua_State* L) {
 }
 
 static int l_lovrMicrophoneGetData(lua_State* L) {
-  Microphone* microphone = luax_checktype(L, 1, Microphone);
-  SoundData* soundData = lovrMicrophoneGetData(microphone);
+  int index = 1;
+  Microphone* microphone = luax_checktype(L, index++, Microphone);
+  size_t samples = lua_type(L, index) == LUA_TNUMBER ? lua_tointeger(L, index++) : lovrMicrophoneGetSampleCount(microphone);
+
+  if (samples == 0) {
+    return 0;
+  }
+
+  SoundData* soundData = luax_totype(L, index++, SoundData);
+  size_t offset = soundData ? luaL_optinteger(L, index, 0) : 0;
+
+  if (soundData) {
+    lovrRetain(soundData);
+  }
+
+  soundData = lovrMicrophoneGetData(microphone, samples, soundData, offset);
   luax_pushtype(L, SoundData, soundData);
   lovrRelease(SoundData, soundData);
   return 1;

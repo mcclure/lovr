@@ -41,14 +41,14 @@ bool fs_close(fs_handle file) {
 }
 
 bool fs_read(fs_handle file, void* buffer, size_t* bytes) {
-  uint32_t bytes32 = *bytes > UINT32_MAX ? UINT32_MAX : (uint32_t) *bytes;
+  DWORD bytes32 = *bytes > UINT32_MAX ? UINT32_MAX : (DWORD) *bytes;
   bool success = ReadFile(file.handle, buffer, bytes32, &bytes32, NULL);
   *bytes = bytes32;
   return success;
 }
 
 bool fs_write(fs_handle file, const void* buffer, size_t* bytes) {
-  uint32_t bytes32 = *bytes > UINT32_MAX ? UINT32_MAX : (uint32_t) *bytes;
+  DWORD bytes32 = *bytes > UINT32_MAX ? UINT32_MAX : (DWORD) *bytes;
   bool success = WriteFile(file.handle, buffer, bytes32, &bytes32, NULL);
   *bytes = bytes32;
   return success;
@@ -137,8 +137,13 @@ bool fs_mkdir(const char* path) {
 
 bool fs_list(const char* path, fs_list_cb* callback, void* context) {
   WCHAR wpath[FS_PATH_MAX];
-  if (!MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, FS_PATH_MAX)) {
+
+  int length = MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, FS_PATH_MAX);
+
+  if (length == 0 || length + 3 >= FS_PATH_MAX) {
     return false;
+  } else {
+    wcscat(wpath, L"/*");
   }
 
   WIN32_FIND_DATAW findData;
@@ -217,6 +222,7 @@ size_t fs_getBundleId(char* buffer, size_t size) {
 #include <dirent.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include <pwd.h>
 
 bool fs_open(const char* path, OpenMode mode, fs_handle* file) {
@@ -237,7 +243,7 @@ bool fs_close(fs_handle file) {
 
 bool fs_read(fs_handle file, void* buffer, size_t* bytes) {
   ssize_t result = read(file.fd, buffer, *bytes);
-  if (result < 0 || result > UINT32_MAX) {
+  if (result < 0 || result > SSIZE_MAX) {
     *bytes = 0;
     return false;
   } else {
@@ -248,7 +254,7 @@ bool fs_read(fs_handle file, void* buffer, size_t* bytes) {
 
 bool fs_write(fs_handle file, const void* buffer, size_t* bytes) {
   ssize_t result = write(file.fd, buffer, *bytes);
-  if (result < 0 || result > UINT32_MAX) {
+  if (result < 0 || result > SSIZE_MAX) {
     *bytes = 0;
     return false;
   } else {

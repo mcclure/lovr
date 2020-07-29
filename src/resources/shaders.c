@@ -25,7 +25,8 @@ const char* lovrShaderVertexPrefix = ""
 "#else \n"
 "#define lovrVertex vec4(lovrPosition, 1.) \n"
 "#endif \n"
-"#define lovrMain position(mat4 _projection, mat4 _transform, vec4 _vertex) \n"
+"precision highp float; \n"
+"precision highp int; \n"
 "in vec3 lovrPosition; \n"
 "in vec3 lovrNormal; \n"
 "in vec2 lovrTexCoord; \n"
@@ -69,9 +70,15 @@ const char* lovrShaderVertexSuffix = ""
 const char* lovrShaderFragmentPrefix = ""
 "#define PIXEL PIXEL \n"
 "#define FRAGMENT FRAGMENT \n"
-"#define lovrMain color(vec4 _graphicsColor, sampler2D _image, vec2 _uv) \n"
 "#define lovrTexCoord texCoord \n"
 "#define lovrVertexColor vertexColor \n"
+"#ifdef FLAG_highp \n"
+"precision highp float; \n"
+"precision highp int; \n"
+"#else \n"
+"precision mediump float; \n"
+"precision mediump int; \n"
+"#endif \n"
 "in vec2 texCoord; \n"
 "in vec4 vertexColor; \n"
 "in vec4 lovrGraphicsColor; \n"
@@ -94,6 +101,18 @@ const char* lovrShaderFragmentPrefix = ""
 "#else \n"
 "uniform lowp int lovrViewID; \n"
 "#endif \n"
+"#ifdef MULTIVIEW \n"
+"#define sampler2DMultiview sampler2DArray \n"
+"vec4 textureMultiview(sampler2DMultiview t, vec2 uv) { \n"
+"  return texture(t, vec3(uv, lovrViewID)); \n"
+"} \n"
+"#else \n"
+"#define sampler2DMultiview sampler2D \n"
+"vec4 textureMultiview(sampler2DMultiview t, vec2 uv) { \n"
+"  uv = clamp(uv, 0., 1.) * vec2(.5, 1.) + vec2(lovrViewID) * vec2(.5, 0.); \n"
+"  return texture(t, uv); \n"
+"} \n"
+"#endif \n"
 "#line 0 \n";
 
 const char* lovrShaderFragmentSuffix = ""
@@ -101,7 +120,7 @@ const char* lovrShaderFragmentSuffix = ""
 "#if defined(MULTICANVAS) || defined(FLAG_multicanvas) \n"
 "  colors(lovrGraphicsColor, lovrDiffuseTexture, texCoord); \n"
 "#else \n"
-"  lovrCanvas[0] = color(lovrGraphicsColor, lovrDiffuseTexture, texCoord); \n"
+"  lovrCanvas[0] = color(lovrGraphicsColor, lovrDiffuseTexture, lovrTexCoord); \n"
 "#ifdef FLAG_alphaCutoff \n"
 "  if (lovrCanvas[0].a < FLAG_alphaCutoff) { \n"
 "    discard; \n"
@@ -113,9 +132,15 @@ const char* lovrShaderFragmentSuffix = ""
 "#endif \n"
 "}";
 
+#ifdef LOVR_GLES
+const char* lovrShaderComputePrefix = ""
+"#version 310 es \n"
+"#line 0 \n";
+#else
 const char* lovrShaderComputePrefix = ""
 "#version 430 \n"
 "#line 0 \n";
+#endif
 
 const char* lovrShaderComputeSuffix = ""
 "void main() { \n"
@@ -123,12 +148,12 @@ const char* lovrShaderComputeSuffix = ""
 "}";
 
 const char* lovrUnlitVertexShader = ""
-"vec4 lovrMain { \n"
+"vec4 position(mat4 projection, mat4 transform, vec4 vertex) { \n"
 "  return lovrProjection * lovrTransform * lovrVertex; \n"
 "}";
 
 const char* lovrUnlitFragmentShader = ""
-"vec4 lovrMain { \n"
+"vec4 color(vec4 graphicsColor, sampler2D image, vec2 uv) { \n"
 "  return lovrGraphicsColor * lovrVertexColor * lovrDiffuseColor * texture(lovrDiffuseTexture, lovrTexCoord); \n"
 "}";
 
@@ -141,7 +166,7 @@ const char* lovrStandardVertexShader = ""
 "out vec3 vNormal; \n"
 "#endif \n"
 
-"vec4 lovrMain { \n"
+"vec4 position(mat4 projection, mat4 transform, vec4 vertex) { \n"
 "  vVertexPositionWorld = vec3(lovrModel * lovrVertex); \n"
 "  vCameraPositionWorld = -lovrView[3].xyz * mat3(lovrView); \n"
 "#ifdef FLAG_normalMap \n"
@@ -184,7 +209,7 @@ const char* lovrStandardFragmentShader = ""
 "vec2 prefilteredBRDF(float NoV, float roughness); \n"
 "vec3 tonemap_ACES(vec3 color); \n"
 
-"vec4 lovrMain { \n"
+"vec4 color(vec4 graphicsColor, sampler2D image, vec2 uv) { \n"
 "  vec3 result = vec3(0.); \n"
 
 // Parameters
@@ -294,7 +319,7 @@ const char* lovrStandardFragmentShader = ""
 
 const char* lovrCubeVertexShader = ""
 "out vec3 texturePosition[2]; \n"
-"vec4 lovrMain { \n"
+"vec4 position(mat4 projection, mat4 transform, vec4 vertex) { \n"
 "  texturePosition[lovrViewID] = inverse(mat3(lovrTransform)) * (inverse(lovrProjection) * lovrVertex).xyz; \n"
 "  return lovrVertex; \n"
 "}";
@@ -302,26 +327,26 @@ const char* lovrCubeVertexShader = ""
 const char* lovrCubeFragmentShader = ""
 "in vec3 texturePosition[2]; \n"
 "uniform samplerCube lovrSkyboxTexture; \n"
-"vec4 lovrMain { \n"
+"vec4 color(vec4 graphicsColor, sampler2D image, vec2 uv) { \n"
 "  return lovrGraphicsColor * texture(lovrSkyboxTexture, texturePosition[lovrViewID] * vec3(-1, 1, 1)); \n"
 "}";
 
 const char* lovrPanoFragmentShader = ""
 "in vec3 texturePosition[2]; \n"
 "#define PI 3.141592653589 \n"
-"vec4 lovrMain { \n"
+"vec4 color(vec4 graphicsColor, sampler2D image, vec2 uv) { \n"
 "  vec3 direction = texturePosition[lovrViewID]; \n"
 "  float theta = acos(-direction.y / length(direction)); \n"
 "  float phi = atan(direction.x, -direction.z); \n"
-"  vec2 uv = vec2(.5 + phi / (2. * PI), theta / PI); \n"
-"  return lovrGraphicsColor * texture(lovrDiffuseTexture, uv); \n"
+"  vec2 cubeUv = vec2(.5 + phi / (2. * PI), theta / PI); \n"
+"  return lovrGraphicsColor * texture(lovrDiffuseTexture, cubeUv); \n"
 "}";
 
 const char* lovrFontFragmentShader = ""
 "float median(float r, float g, float b) { \n"
 "  return max(min(r, g), min(max(r, g), b)); \n"
 "} \n"
-"vec4 lovrMain { \n"
+"vec4 color(vec4 graphicsColor, sampler2D image, vec2 uv) { \n"
 "  vec3 col = texture(lovrDiffuseTexture, lovrTexCoord).rgb; \n"
 "  float sdf = median(col.r, col.g, col.b); \n"
 "  float w = fwidth(sdf); \n"
@@ -331,7 +356,7 @@ const char* lovrFontFragmentShader = ""
 "}";
 
 const char* lovrFillVertexShader = ""
-"vec4 lovrMain { \n"
+"vec4 position(mat4 projection, mat4 transform, vec4 vertex) { \n"
 "  return lovrVertex; \n"
 "}";
 

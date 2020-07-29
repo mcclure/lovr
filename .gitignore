@@ -10,6 +10,13 @@ config/*
 /debug.sh
 /db
 /lovr
+/lovr.exe
+/lovr.exp
+/lovr.lib
+/lovr.js
+/lovr.worker.js
+/lovr.html
+/lovr.wasm
 build
 build-*
 /libs

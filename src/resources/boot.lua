@@ -52,7 +52,7 @@ local function nogame()
       for i, hand in ipairs(lovr.headset.getHands()) do
         models[hand] = models[hand] or lovr.headset.newModel(hand)
         if models[hand] then
-          local x, y, z, angle ax, ay, az = lovr.headset.getPose(hand)
+          local x, y, z, angle, ax, ay, az = lovr.headset.getPose(hand)
           models[hand]:draw(x, y, z, 1.0, angle, ax, ay, az)
         end
       end
@@ -96,7 +96,7 @@ function lovr.boot()
       timer = true
     },
     headset = {
-      drivers = { 'leap', 'openxr', 'oculus', 'oculusmobile', 'openvr', 'webvr', 'desktop' },
+      drivers = { 'leap', 'openxr', 'oculus', 'oculusmobile', 'openvr', 'webxr', 'webvr', 'desktop' },
       offset = 1.7,
       msaa = 4
     },
@@ -149,7 +149,10 @@ function lovr.run()
   return function()
     lovr.event.pump()
     for name, a, b, c, d in lovr.event.poll() do
-      if name == 'quit' and (not lovr.quit or not lovr.quit()) then
+      if name == 'restart' then
+        local cookie = lovr.restart and lovr.restart()
+        return 'restart', cookie
+      elseif name == 'quit' and (not lovr.quit or not lovr.quit(a)) then
         return a or 0
       end
       if lovr.handlers[name] then lovr.handlers[name](a, b, c, d) end
@@ -188,7 +191,11 @@ function lovr.mirror()
   if lovr.headset then -- On some systems, headset module will be disabled
     local texture = lovr.headset.getMirrorTexture()
     if texture then    -- On some drivers, texture is printed directly to the window
-      lovr.graphics.fill(texture)
+      if lovr.headset.getDriver() == 'oculus' then
+        lovr.graphics.fill(lovr.headset.getMirrorTexture(), 0, 1, 1, -1)
+      else
+        lovr.graphics.fill(lovr.headset.getMirrorTexture())
+      end
     end
   else
     lovr.graphics.clear()
@@ -280,8 +287,8 @@ return function()
       return 1
     end
 
-    local ok, result = xpcall(continuation, onerror)
-    if result and ok then return result -- Result is value returned by function. Return it.
+    local ok, result, extra = xpcall(continuation, onerror)
+    if result and ok then return result, extra -- Result is value returned by function. Return it.
     elseif not ok then continuation = result end -- Result is value returned by error handler. Make it the new error handler.
 
     local externerror = coroutine.yield() -- Return control to C code

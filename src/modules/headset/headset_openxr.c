@@ -4,7 +4,6 @@
 #include "graphics/graphics.h"
 #include "graphics/canvas.h"
 #include "graphics/texture.h"
-#include "graphics/opengl.h"
 #include "core/ref.h"
 #include "core/util.h"
 #include <math.h>
@@ -14,6 +13,7 @@
 #endif
 
 #define XR_USE_GRAPHICS_API_OPENGL
+#define GL_SRGB8_ALPHA8 0x8C43
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
@@ -203,7 +203,7 @@ static struct {
   XrCompositionLayerProjectionView layerViews[2];
   XrFrameState frameState;
   Canvas* canvas;
-  Texture textures[MAX_IMAGES];
+  Texture* textures[MAX_IMAGES];
   uint32_t imageCount;
   uint32_t msaa;
   uint32_t width;
@@ -394,7 +394,7 @@ static bool openxr_init(float offset, uint32_t msaa) {
     XR_INIT(xrEnumerateSwapchainImages(state.swapchain, MAX_IMAGES, &state.imageCount, (XrSwapchainImageBaseHeader*) images));
 
     for (uint32_t i = 0; i < state.imageCount; i++) {
-      lovrTextureInitFromHandle(&state.textures[i], images[i].image, TEXTURE_2D, 1);
+      state.textures[i] = lovrTextureCreateFromHandle(images[i].image, TEXTURE_2D, 1);
     }
 
     // Pre-init composition layer
@@ -416,13 +416,16 @@ static bool openxr_init(float offset, uint32_t msaa) {
     state.layerViews[1].subImage.imageRect.offset.x += state.width;
   }
 
+  state.clipNear = .1f;
+  state.clipNear = 100.f;
+
   return true;
 }
 
 static void openxr_destroy() {
   lovrRelease(Canvas, state.canvas);
   for (uint32_t i = 0; i < state.imageCount; i++) {
-    lovrRelease(Texture, &state.textures[i]);
+    lovrRelease(Texture, state.textures[i]);
   }
 
   for (size_t i = 0; i < MAX_ACTIONS; i++) {
@@ -469,6 +472,53 @@ static const float* openxr_getDisplayMask(uint32_t* count) {
 
 static double openxr_getDisplayTime(void) {
   return state.frameState.predictedDisplayTime / 1e9;
+}
+
+static void getViews(XrView views[2], uint32_t* count) {
+  XrViewLocateInfo viewLocateInfo = {
+    .type = XR_TYPE_VIEW_LOCATE_INFO,
+    .viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
+    .displayTime = state.frameState.predictedDisplayTime,
+    .space = state.referenceSpace
+  };
+
+  XrViewState viewState;
+  XR(xrLocateViews(state.session, &viewLocateInfo, &viewState, sizeof(views) / sizeof(views[0]), count, views));
+}
+
+static uint32_t openxr_getViewCount(void) {
+  uint32_t count;
+  XrView views[2];
+  getViews(views, &count);
+  return count;
+}
+
+static bool openxr_getViewPose(uint32_t view, float* position, float* orientation) {
+  uint32_t count;
+  XrView views[2];
+  getViews(views, &count);
+  if (view < count) {
+    memcpy(position, views[view].pose.position, 3 * sizeof(float));
+    memcpy(orientation, views[view].pose.orientation, 4 * sizeof(float));
+    return true;
+  } else {
+    return false;
+  }
+}
+
+static bool openxr_getViewAngles(uint32_t view, float* left, float* right, float* up, float* down) {
+  uint32_t count;
+  XrView views[2];
+  getViews(views, &count);
+  if (view < count) {
+    *left = views[view].fov.angleLeft;
+    *right = views[view].fov.angleRight;
+    *up = views[view].fov.angleUp;
+    *down = views[view].fov.angleDown;
+    return true;
+  } else {
+    return false;
+  }
 }
 
 static void openxr_getClipDistance(float* clipNear, float* clipFar) {
@@ -551,15 +601,17 @@ static bool getButtonState(Device device, DeviceButton button, bool* value, bool
   XrActionStateBoolean actionState;
   XR(xrGetActionStateBoolean(state.session, &info, &actionState));
   *value = actionState.currentState;
+  *changed = actionState.changedSinceLastSync;
   return actionState.isActive;
 }
 
-static bool openxr_isDown(Device device, DeviceButton button, bool* down) {
-  return getButtonState(device, button, down, false);
+static bool openxr_isDown(Device device, DeviceButton button, bool* down, bool* changed) {
+  return getButtonState(device, button, down, changed, false);
 }
 
 static bool openxr_isTouched(Device device, DeviceButton button, bool* touched) {
-  return getButtonState(device, button, touched, true);
+  bool unused;
+  return getButtonState(device, button, touched, &unused, true);
 }
 
 static bool openxr_getAxis(Device device, DeviceAxis axis, float* value) {
@@ -641,17 +693,6 @@ static void openxr_renderTo(void (*callback)(void*), void* userdata) {
     XrSwapchainImageWaitInfo waitInfo = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO, .timeout = 1e9 };
 
     if (XR(xrWaitSwapchainImage(state.swapchain, &waitInfo)) != XR_TIMEOUT_EXPIRED) {
-      XrViewLocateInfo viewLocateInfo = {
-        .type = XR_TYPE_VIEW_LOCATE_INFO,
-        .viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
-        .displayTime = state.frameState.predictedDisplayTime,
-        .space = state.referenceSpace
-      };
-
-      XrView views[2];
-      XrViewState viewState;
-      XR(xrLocateViews(state.session, &viewLocateInfo, &viewState, 2, NULL, views));
-
       if (!state.canvas) {
         CanvasFlags flags = { .depth = { true, false, FORMAT_D24S8 }, .stereo = true, .mipmaps = true, .msaa = state.msaa };
         state.canvas = lovrCanvasCreate(state.width, state.height, flags);
@@ -660,19 +701,27 @@ static void openxr_renderTo(void (*callback)(void*), void* userdata) {
 
       Camera camera = { .canvas = state.canvas, .stereo = true };
 
+      uint32_t count;
+      XrView views[2];
+      getViews(views, &count);
+
       for (int eye = 0; eye < 2; eye++) {
         XrView* view = &views[eye];
         XrVector3f* v = &view->pose.position;
         XrQuaternionf* q = &view->pose.orientation;
         XrFovf* fov = &view->fov;
-        mat4_fov(camera.projection[eye], fov->angleLeft, fov->angleRight, fov->angleUp, fov->angleDown, state.clipNear, state.clipFar);
+        float left = tanf(fov->angleLeft);
+        float right = tanf(fov->angleRight);
+        float up = tanf(fov->angleUp);
+        float down = tanf(fov->angleDown);
+        mat4_fov(camera.projection[eye], left, right, up, down, state.clipNear, state.clipFar);
         mat4_identity(camera.viewMatrix[eye]);
         mat4_translate(camera.viewMatrix[eye], v->x, v->y, v->z);
         mat4_rotateQuat(camera.viewMatrix[eye], (float[4]) { q->x, q->y, q->z, q->w });
         mat4_invert(camera.viewMatrix[eye]);
       }
 
-      lovrCanvasSetAttachments(state.canvas, &(Attachment) { &state.textures[imageIndex], 0, 0 }, 1);
+      lovrCanvasSetAttachments(state.canvas, &(Attachment) { state.textures[imageIndex], 0, 0 }, 1);
       lovrGraphicsSetCamera(&camera, true);
       callback(userdata);
       lovrGraphicsSetCamera(NULL, false);
@@ -754,6 +803,9 @@ HeadsetInterface lovrHeadsetOpenXRDriver = {
   .getDisplayDimensions = openxr_getDisplayDimensions,
   .getDisplayMask = openxr_getDisplayMask,
   .getDisplayTime = openxr_getDisplayTime,
+  .getViewCount = openxr_getViewCount,
+  .getViewPose = openxr_getViewPose,
+  .getViewAngles = openxr_getViewAngles,
   .getClipDistance = openxr_getClipDistance,
   .setClipDistance = openxr_setClipDistance,
   .getBoundsDimensions = openxr_getBoundsDimensions,

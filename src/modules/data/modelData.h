@@ -35,8 +35,7 @@ typedef enum {
 typedef enum {
   FILTER_NEAREST,
   FILTER_BILINEAR,
-  FILTER_TRILINEAR,
-  FILTER_ANISOTROPIC
+  FILTER_TRILINEAR
 } FilterMode;
 
 typedef struct {
@@ -157,10 +156,14 @@ typedef struct {
 
 typedef struct {
   const char* name;
-  float transform[16];
-  float translation[4];
-  float rotation[4];
-  float scale[4];
+  union {
+    float matrix[16];
+    struct {
+      float translation[4];
+      float rotation[4];
+      float scale[4];
+    } properties;
+  } transform;
   uint32_t* children;
   uint32_t childCount;
   uint32_t primitiveIndex;

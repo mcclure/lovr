@@ -30,7 +30,7 @@ static int l_lovrTextureDataGetDimensions(lua_State* L) {
 
 static int l_lovrTextureDataGetFormat(lua_State* L) {
   TextureData* textureData = luax_checktype(L, 1, TextureData);
-  lua_pushstring(L, TextureFormats[textureData->format]);
+  luax_pushenum(L, TextureFormats, textureData->format);
   return 1;
 }
 
@@ -73,9 +73,10 @@ static int l_lovrTextureDataSetPixel(lua_State* L) {
   return 0;
 }
 
-static int l_lovrTextureDataGetPointer(lua_State* L) {
+static int l_lovrTextureDataGetBlob(lua_State* L) {
   TextureData* textureData = luax_checktype(L, 1, TextureData);
-  lua_pushlightuserdata(L, textureData->blob.data);
+  Blob* blob = textureData->blob;
+  luax_pushtype(L, Blob, blob);
   return 1;
 }
 
@@ -88,6 +89,6 @@ const luaL_Reg lovrTextureData[] = {
   { "paste", l_lovrTextureDataPaste },
   { "getPixel", l_lovrTextureDataGetPixel },
   { "setPixel", l_lovrTextureDataSetPixel },
-  { "getPointer", l_lovrTextureDataGetPointer },
+  { "getBlob", l_lovrTextureDataGetBlob },
   { NULL, NULL }
 };

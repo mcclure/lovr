@@ -9,6 +9,9 @@ typedef enum {
   FORMAT_RGB,
   FORMAT_RGBA,
   FORMAT_RGBA4,
+  FORMAT_R16,
+  FORMAT_RG16,
+  FORMAT_RGBA16,
   FORMAT_RGBA16F,
   FORMAT_RGBA32F,
   FORMAT_R16F,
@@ -48,7 +51,7 @@ typedef struct {
 } Mipmap;
 
 typedef struct TextureData {
-  Blob blob;
+  Blob* blob;
   uint32_t width;
   uint32_t height;
   Blob* source;
@@ -57,7 +60,7 @@ typedef struct TextureData {
   uint32_t mipmapCount;
 } TextureData;
 
-TextureData* lovrTextureDataInit(TextureData* textureData, uint32_t width, uint32_t height, uint8_t value, TextureFormat format);
+TextureData* lovrTextureDataInit(TextureData* textureData, uint32_t width, uint32_t height, Blob* contents, uint8_t value, TextureFormat format);
 TextureData* lovrTextureDataInitFromBlob(TextureData* textureData, Blob* blob, bool flip);
 #define lovrTextureDataCreate(...) lovrTextureDataInit(lovrAlloc(TextureData), __VA_ARGS__)
 #define lovrTextureDataCreateFromBlob(...) lovrTextureDataInitFromBlob(lovrAlloc(TextureData), __VA_ARGS__)

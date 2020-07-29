@@ -2,7 +2,6 @@
 #include "data/blob.h"
 #include "data/textureData.h"
 #include "core/arr.h"
-#include "core/hash.h"
 #include "core/maf.h"
 #include "core/map.h"
 #include "core/ref.h"
@@ -321,7 +320,7 @@ ModelData* lovrModelDataInitObj(ModelData* model, Blob* source, ModelDataIO* io)
   }
 
   model->nodes[0] = (ModelNode) {
-    .transform = MAT4_IDENTITY,
+    .transform.matrix = MAT4_IDENTITY,
     .primitiveIndex = 0,
     .primitiveCount = (uint32_t) groups.length,
     .skin = ~0u,

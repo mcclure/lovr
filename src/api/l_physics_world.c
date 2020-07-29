@@ -40,10 +40,9 @@ static void raycastCallback(Shape* shape, float x, float y, float z, float nx, f
 
 static int l_lovrWorldNewCollider(lua_State* L) {
   World* world = luax_checktype(L, 1, World);
-  float x = luax_optfloat(L, 2, 0.f);
-  float y = luax_optfloat(L, 3, 0.f);
-  float z = luax_optfloat(L, 4, 0.f);
-  Collider* collider = lovrColliderCreate(world, x, y, z);
+  float position[4];
+  luax_readvec3(L, 2, position, NULL);
+  Collider* collider = lovrColliderCreate(world, position[0], position[1], position[2]);
   luax_pushtype(L, Collider, collider);
   lovrRelease(Collider, collider);
   return 1;
@@ -51,15 +50,13 @@ static int l_lovrWorldNewCollider(lua_State* L) {
 
 static int l_lovrWorldNewBoxCollider(lua_State* L) {
   World* world = luax_checktype(L, 1, World);
-  float x = luax_optfloat(L, 2, 0.f);
-  float y = luax_optfloat(L, 3, 0.f);
-  float z = luax_optfloat(L, 4, 0.f);
-  float sx = luax_optfloat(L, 5, 1.f);
-  float sy = luax_optfloat(L, 6, sx);
-  float sz = luax_optfloat(L, 7, sx);
-  Collider* collider = lovrColliderCreate(world, x, y, z);
-  BoxShape* shape = lovrBoxShapeCreate(sx, sy, sz);
+  float position[4], size[4];
+  int index = luax_readvec3(L, 2, position, NULL);
+  luax_readscale(L, index, size, 3, NULL);
+  Collider* collider = lovrColliderCreate(world, position[0], position[1], position[2]);
+  BoxShape* shape = lovrBoxShapeCreate(size[0], size[1], size[2]);
   lovrColliderAddShape(collider, shape);
+  lovrColliderInitInertia(collider, shape);
   luax_pushtype(L, Collider, collider);
   lovrRelease(Collider, collider);
   lovrRelease(Shape, shape);
@@ -68,14 +65,14 @@ static int l_lovrWorldNewBoxCollider(lua_State* L) {
 
 static int l_lovrWorldNewCapsuleCollider(lua_State* L) {
   World* world = luax_checktype(L, 1, World);
-  float x = luax_optfloat(L, 2, 0.f);
-  float y = luax_optfloat(L, 3, 0.f);
-  float z = luax_optfloat(L, 4, 0.f);
-  float radius = luax_optfloat(L, 5, 1.f);
-  float length = luax_optfloat(L, 6, 1.f);
-  Collider* collider = lovrColliderCreate(world, x, y, z);
+  float position[4];
+  int index = luax_readvec3(L, 2, position, NULL);
+  float radius = luax_optfloat(L, index++, 1.f);
+  float length = luax_optfloat(L, index, 1.f);
+  Collider* collider = lovrColliderCreate(world, position[0], position[1], position[2]);
   CapsuleShape* shape = lovrCapsuleShapeCreate(radius, length);
   lovrColliderAddShape(collider, shape);
+  lovrColliderInitInertia(collider, shape);
   luax_pushtype(L, Collider, collider);
   lovrRelease(Collider, collider);
   lovrRelease(Shape, shape);
@@ -84,14 +81,14 @@ static int l_lovrWorldNewCapsuleCollider(lua_State* L) {
 
 static int l_lovrWorldNewCylinderCollider(lua_State* L) {
   World* world = luax_checktype(L, 1, World);
-  float x = luax_optfloat(L, 2, 0.f);
-  float y = luax_optfloat(L, 3, 0.f);
-  float z = luax_optfloat(L, 4, 0.f);
-  float radius = luax_optfloat(L, 5, 1.f);
-  float length = luax_optfloat(L, 6, 1.f);
-  Collider* collider = lovrColliderCreate(world, x, y, z);
+  float position[4];
+  int index = luax_readvec3(L, 2, position, NULL);
+  float radius = luax_optfloat(L, index++, 1.f);
+  float length = luax_optfloat(L, index, 1.f);
+  Collider* collider = lovrColliderCreate(world, position[0], position[1], position[2]);
   CylinderShape* shape = lovrCylinderShapeCreate(radius, length);
   lovrColliderAddShape(collider, shape);
+  lovrColliderInitInertia(collider, shape);
   luax_pushtype(L, Collider, collider);
   lovrRelease(Collider, collider);
   lovrRelease(Shape, shape);
@@ -100,16 +97,37 @@ static int l_lovrWorldNewCylinderCollider(lua_State* L) {
 
 static int l_lovrWorldNewSphereCollider(lua_State* L) {
   World* world = luax_checktype(L, 1, World);
-  float x = luax_optfloat(L, 2, 0.f);
-  float y = luax_optfloat(L, 3, 0.f);
-  float z = luax_optfloat(L, 4, 0.f);
-  float radius = luax_optfloat(L, 5, 1.f);
-  Collider* collider = lovrColliderCreate(world, x, y, z);
+  float position[4];
+  int index = luax_readvec3(L, 2, position, NULL);
+  float radius = luax_optfloat(L, index, 1.f);
+  Collider* collider = lovrColliderCreate(world, position[0], position[1], position[2]);
   SphereShape* shape = lovrSphereShapeCreate(radius);
   lovrColliderAddShape(collider, shape);
+  lovrColliderInitInertia(collider, shape);
   luax_pushtype(L, Collider, collider);
   lovrRelease(Collider, collider);
   lovrRelease(Shape, shape);
+  return 1;
+}
+
+static int l_lovrWorldGetColliders(lua_State* L) {
+  World* world = luax_checktype(L, 1, World);
+
+  if (lua_istable(L, 2)) {
+    lua_settop(L, 2);
+  } else {
+    lua_newtable(L);
+  }
+
+  Collider* collider = lovrWorldGetFirstCollider(world);
+  int index = 1;
+
+  while (collider) {
+    luax_pushtype(L, Collider, collider);
+    lua_rawseti(L, -2, index++);
+    collider = collider->next;
+  }
+
   return 1;
 }
 
@@ -163,10 +181,39 @@ static int l_lovrWorldGetGravity(lua_State* L) {
 
 static int l_lovrWorldSetGravity(lua_State* L) {
   World* world = luax_checktype(L, 1, World);
-  float x = luax_checkfloat(L, 2);
-  float y = luax_checkfloat(L, 3);
-  float z = luax_checkfloat(L, 4);
-  lovrWorldSetGravity(world, x, y, z);
+  float gravity[4];
+  luax_readvec3(L, 2, gravity, NULL);
+  lovrWorldSetGravity(world, gravity[0], gravity[1], gravity[2]);
+  return 0;
+}
+
+static int l_lovrWorldGetTightness(lua_State* L) {
+  World* world = luax_checktype(L, 1, World);
+  float tightness = lovrWorldGetTightness(world);
+  lovrAssert(tightness >= 0, "Negative tightness factor causes simulation instability");
+  lua_pushnumber(L, tightness);
+  return 1;
+}
+
+static int l_lovrWorldSetTightness(lua_State* L) {
+  World* world = luax_checktype(L, 1, World);
+  float tightness = luax_checkfloat(L, 2);
+  lovrWorldSetTightness(world, tightness);
+  return 0;
+}
+
+static int l_lovrWorldGetResponseTime(lua_State* L) {
+  World* world = luax_checktype(L, 1, World);
+  float responseTime = lovrWorldGetResponseTime(world);
+  lua_pushnumber(L, responseTime);
+  return 1;
+}
+
+static int l_lovrWorldSetResponseTime(lua_State* L) {
+  World* world = luax_checktype(L, 1, World);
+  float responseTime = luax_checkfloat(L, 2);
+  lovrAssert(responseTime >= 0, "Negative response time causes simulation instability");
+  lovrWorldSetResponseTime(world, responseTime);
   return 0;
 }
 
@@ -219,15 +266,13 @@ static int l_lovrWorldSetSleepingAllowed(lua_State* L) {
 
 static int l_lovrWorldRaycast(lua_State* L) {
   World* world = luax_checktype(L, 1, World);
-  float x1 = luax_checkfloat(L, 2);
-  float y1 = luax_checkfloat(L, 3);
-  float z1 = luax_checkfloat(L, 4);
-  float x2 = luax_checkfloat(L, 5);
-  float y2 = luax_checkfloat(L, 6);
-  float z2 = luax_checkfloat(L, 7);
-  luaL_checktype(L, 8, LUA_TFUNCTION);
-  lua_settop(L, 8);
-  lovrWorldRaycast(world, x1, y1, z1, x2, y2, z2, raycastCallback, L);
+  float start[4], end[4];
+  int index;
+  index = luax_readvec3(L, 2, start, NULL);
+  index = luax_readvec3(L, index, end, NULL);
+  luaL_checktype(L, index, LUA_TFUNCTION);
+  lua_settop(L, index);
+  lovrWorldRaycast(world, start[0], start[1], start[2], end[0], end[1], end[2], raycastCallback, L);
   return 0;
 }
 
@@ -261,6 +306,7 @@ const luaL_Reg lovrWorld[] = {
   { "newCapsuleCollider", l_lovrWorldNewCapsuleCollider },
   { "newCylinderCollider", l_lovrWorldNewCylinderCollider },
   { "newSphereCollider", l_lovrWorldNewSphereCollider },
+  { "getColliders", l_lovrWorldGetColliders },
   { "destroy", l_lovrWorldDestroy },
   { "update", l_lovrWorldUpdate },
   { "computeOverlaps", l_lovrWorldComputeOverlaps },
@@ -268,6 +314,10 @@ const luaL_Reg lovrWorld[] = {
   { "collide", l_lovrWorldCollide },
   { "getGravity", l_lovrWorldGetGravity },
   { "setGravity", l_lovrWorldSetGravity },
+  { "getTightness", l_lovrWorldGetTightness },
+  { "setTightness", l_lovrWorldSetTightness },
+  { "getResponseTime", l_lovrWorldGetResponseTime },
+  { "setResponseTime", l_lovrWorldSetResponseTime },
   { "getLinearDamping", l_lovrWorldGetLinearDamping },
   { "setLinearDamping", l_lovrWorldSetLinearDamping },
   { "getAngularDamping", l_lovrWorldGetAngularDamping },

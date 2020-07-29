@@ -1,7 +1,5 @@
 #include "api.h"
 #include "audio/audio.h"
-#include "audio/microphone.h"
-#include "audio/source.h"
 #include "data/blob.h"
 #include "data/audioStream.h"
 #include "data/soundData.h"
@@ -9,16 +7,16 @@
 #include "core/ref.h"
 #include <stdlib.h>
 
-const char* SourceTypes[] = {
-  [SOURCE_STATIC] = "static",
-  [SOURCE_STREAM] = "stream",
-  NULL
+StringEntry SourceTypes[] = {
+  [SOURCE_STATIC] = ENTRY("static"),
+  [SOURCE_STREAM] = ENTRY("stream"),
+  { 0 }
 };
 
-const char* TimeUnits[] = {
-  [UNIT_SECONDS] = "seconds",
-  [UNIT_SAMPLES] = "samples",
-  NULL
+StringEntry TimeUnits[] = {
+  [UNIT_SECONDS] = ENTRY("seconds"),
+  [UNIT_SAMPLES] = ENTRY("samples"),
+  { 0 }
 };
 
 static int l_lovrAudioUpdate(lua_State* L) {
@@ -124,7 +122,7 @@ static int l_lovrAudioNewSource(lua_State* L) {
   Source* source = NULL;
   SoundData* soundData = luax_totype(L, 1, SoundData);
   AudioStream* stream = luax_totype(L, 1, AudioStream);
-  bool isStatic = soundData || luaL_checkoption(L, 2, NULL, SourceTypes) == SOURCE_STATIC;
+  bool isStatic = soundData || luax_checkenum(L, 2, SourceTypes, NULL, "SourceType") == SOURCE_STATIC;
 
   if (isStatic) {
     if (soundData) {
@@ -162,16 +160,6 @@ static int l_lovrAudioNewSource(lua_State* L) {
 
 static int l_lovrAudioPause(lua_State* L) {
   lovrAudioPause();
-  return 0;
-}
-
-static int l_lovrAudioResume(lua_State* L) {
-  lovrAudioResume();
-  return 0;
-}
-
-static int l_lovrAudioRewind(lua_State* L) {
-  lovrAudioRewind();
   return 0;
 }
 
@@ -237,8 +225,6 @@ static const luaL_Reg lovrAudio[] = {
   { "newMicrophone", l_lovrAudioNewMicrophone },
   { "newSource", l_lovrAudioNewSource },
   { "pause", l_lovrAudioPause },
-  { "resume", l_lovrAudioResume },
-  { "rewind", l_lovrAudioRewind },
   { "setDopplerEffect", l_lovrAudioSetDopplerEffect },
   { "setOrientation", l_lovrAudioSetOrientation },
   { "setPose", l_lovrAudioSetPose },

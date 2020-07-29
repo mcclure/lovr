@@ -2,6 +2,7 @@
 #pragma once
 
 #include "../../core/util.h"
+#include "data/modelData.h"
 #include <stdbool.h>
 
 // What's going on here:
@@ -99,6 +100,7 @@ typedef struct {
   float trigger, grip;
   BridgeLovrButton buttonDown;
   BridgeLovrTouch  buttonTouch;
+  BridgeLovrButton buttonChanged;
 } BridgeLovrController;
 
 #define BRIDGE_LOVR_CONTROLLERMAX 3
@@ -112,6 +114,9 @@ typedef struct {
   float eyeViewMatrix[2][16];
   float projectionMatrix[2][16];
 
+  float boundsWidth;
+  float boundsDepth;
+
   int controllerCount;
   BridgeLovrController controllers[BRIDGE_LOVR_CONTROLLERMAX];
 } BridgeLovrUpdateData;
@@ -123,11 +128,13 @@ typedef struct {
   const char *writablePath;
   const char *apkPath;
   BridgeLovrDimensions suggestedEyeTexture;
+  float displayFrequency;
   double zeroDisplayTime;
   BridgeLovrDevice deviceType;
   BridgeLovrVibrateFunction* vibrateFunction; // Returns true on success
   unsigned int textureHandles[4];
   unsigned int textureCount;
+  ModelData* handModels[2];
 } BridgeLovrInitData;
 
 LOVR_EXPORT void bridgeLovrInit(BridgeLovrInitData *initData);

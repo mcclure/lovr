@@ -7,12 +7,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-const char* EventTypes[] = {
-  [EVENT_QUIT] = "quit",
-  [EVENT_FOCUS] = "focus",
+StringEntry EventTypes[] = {
+  [EVENT_QUIT] = ENTRY("quit"),
+  [EVENT_RESTART] = ENTRY("restart"),
+  [EVENT_FOCUS] = ENTRY("focus"),
+  [EVENT_RESIZE] = ENTRY("resize"),
 #ifdef LOVR_ENABLE_THREAD
-  [EVENT_THREAD_ERROR] = "threaderror",
+  [EVENT_THREAD_ERROR] = ENTRY("threaderror"),
 #endif
+  { 0 }
 };
 
 static LOVR_THREAD_LOCAL int pollRef;
@@ -21,6 +24,7 @@ void luax_checkvariant(lua_State* L, int index, Variant* variant) {
   int type = lua_type(L, index);
   switch (type) {
     case LUA_TNIL:
+    case LUA_TNONE:
       variant->type = TYPE_NIL;
       break;
 
@@ -91,21 +95,22 @@ static int nextEvent(lua_State* L) {
   if (event.type == EVENT_CUSTOM) {
     lua_pushstring(L, event.data.custom.name);
   } else {
-    lua_pushstring(L, EventTypes[event.type]);
+    luax_pushenum(L, EventTypes, event.type);
   }
 
   switch (event.type) {
     case EVENT_QUIT:
-      if (event.data.quit.restart) {
-        lua_pushliteral(L, "restart");
-      } else {
-        lua_pushnumber(L, event.data.quit.exitCode);
-      }
+      lua_pushnumber(L, event.data.quit.exitCode);
       return 2;
 
     case EVENT_FOCUS:
       lua_pushboolean(L, event.data.boolean.value);
       return 2;
+
+    case EVENT_RESIZE:
+      lua_pushinteger(L, event.data.resize.width);
+      lua_pushinteger(L, event.data.resize.height);
+      return 3;
 
 #ifdef LOVR_ENABLE_THREAD
     case EVENT_THREAD_ERROR:
@@ -134,9 +139,9 @@ static void hotkeyHandler(KeyCode key, ButtonAction action) {
   }
 
   if (key == KEY_ESCAPE) {
-    lovrEventPush((Event) { .type = EVENT_QUIT, .data.quit.restart = false, .data.quit.exitCode = 0 });
+    lovrEventPush((Event) { .type = EVENT_QUIT, .data.quit.exitCode = 0 });
   } else if (key == KEY_F5) {
-    lovrEventPush((Event) { .type = EVENT_QUIT, .data.quit.restart = true });
+    lovrEventPush((Event) { .type = EVENT_RESTART });
   }
 }
 
@@ -171,19 +176,17 @@ static int l_lovrEventPush(lua_State* L) {
 static int l_lovrEventQuit(lua_State* L) {
   EventData data;
 
-  int argType = lua_type(L, 1);
-  if (argType == LUA_TSTRING && 0 == strcmp("restart", lua_tostring(L, 1))) {
-    data.quit.restart = true;
-    data.quit.exitCode = 0;
-  } else if (argType == LUA_TNUMBER || lua_isnoneornil(L, 1)) {
-    data.quit.restart = false;
-    data.quit.exitCode = luaL_optint(L, 1, 0);
-  } else {
-    return luaL_argerror (L, 1, "number, nil or the exact string 'restart' expected");
-  }
+  data.quit.exitCode = luaL_optint(L, 1, 0);
 
   EventType type = EVENT_QUIT;
   Event event = { .type = type, .data = data };
+  lovrEventPush(event);
+  return 0;
+}
+
+static int l_lovrEventRestart(lua_State* L) {
+  EventType type = EVENT_RESTART;
+  Event event = { .type = type };
   lovrEventPush(event);
   return 0;
 }
@@ -194,6 +197,7 @@ static const luaL_Reg lovrEvent[] = {
   { "pump", l_lovrEventPump },
   { "push", l_lovrEventPush },
   { "quit", l_lovrEventQuit },
+  { "restart", l_lovrEventRestart },
   { NULL, NULL }
 };
 

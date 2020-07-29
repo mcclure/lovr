@@ -30,6 +30,8 @@ var LibraryLOVR = {
     var a, b, c, d, e, canvas, display;
     webvr.initialized = true;
     webvr.display = display = Module.lovrDisplay;
+    webvr.display.depthNear = .1;
+    webvr.display.depthFar = 100;
     webvr.canvas = canvas = Module.canvas;
     webvr.frameData = new VRFrameData();
     webvr.gamepads = [];
@@ -138,6 +140,18 @@ var LibraryLOVR = {
     return 0;
   },
 
+  webvr_getViewCount: function() {
+    return 2;
+  },
+
+  webvr_getViewPose: function(view, position, orientation) {
+    return false; // TODO
+  },
+
+  webvr_getViewAngles: function(view, left, right, up, down) {
+    return false; // TODO
+  },
+
   webvr_getClipDistance: function(clipNear, clipFar) {
     HEAPF32[clipNear >> 2] = webvr.display.depthNear;
     HEAPF32[clipFar >> 2] = webvr.display.depthFar;
@@ -207,7 +221,7 @@ var LibraryLOVR = {
     return true;
   },
 
-  webvr_isDown: function(device, button, down) {
+  webvr_isDown: function(device, button, down, changed) {
     var gamepad = webvr.gamepads[device];
 
     if (!gamepad || !gamepad.id || !webvr.buttonMap[gamepad.id] || !webvr.buttonMap[gamepad.id][button]) {
@@ -215,6 +229,7 @@ var LibraryLOVR = {
     }
 
     HEAPF32[down >> 2] = gamepad.buttons[webvr.buttonMap[gamepad.id][button]].pressed;
+    HEAPF32[changed >> 2] = false; // TODO
     return true;
   },
 

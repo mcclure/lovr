@@ -1,8 +1,8 @@
 #include "data/textureData.h"
 #include "filesystem/filesystem.h"
+#include "core/png.h"
 #include "core/ref.h"
 #include "lib/stb/stb_image.h"
-#include "lib/stb/stb_image_write.h"
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
@@ -14,6 +14,9 @@ static size_t getPixelSize(TextureFormat format) {
     case FORMAT_RGB: return 3;
     case FORMAT_RGBA: return 4;
     case FORMAT_RGBA4: return 2;
+    case FORMAT_R16: return 2;
+    case FORMAT_RG16: return 4;
+    case FORMAT_RGBA16: return 8;
     case FORMAT_RGBA16F: return 8;
     case FORMAT_RGBA32F: return 16;
     case FORMAT_R16F: return 2;
@@ -314,7 +317,7 @@ static bool parseDDS(uint8_t* data, size_t size, TextureData* textureData) {
     height = MAX(height >> 1, 1);
   }
 
-  textureData->blob.data = NULL;
+  textureData->blob->data = NULL;
 
   return true;
 }
@@ -353,12 +356,26 @@ static bool parseKTX(uint8_t* bytes, size_t size, TextureData* textureData) {
     return false;
   }
 
-  // TODO RGBA DXT1, SRGB DXT formats
+  // TODO MOAR FORMATS, GIMME COOOBMAPS
   switch (data.ktx->glInternalFormat) {
     case 0x83F0: textureData->format = FORMAT_DXT1; break;
     case 0x83F2: textureData->format = FORMAT_DXT3; break;
     case 0x83F3: textureData->format = FORMAT_DXT5; break;
-    default: return false;
+    case 0x93B0: case 0x93D0: textureData->format = FORMAT_ASTC_4x4; break;
+    case 0x93B1: case 0x93D1: textureData->format = FORMAT_ASTC_5x4; break;
+    case 0x93B2: case 0x93D2: textureData->format = FORMAT_ASTC_5x5; break;
+    case 0x93B3: case 0x93D3: textureData->format = FORMAT_ASTC_6x5; break;
+    case 0x93B4: case 0x93D4: textureData->format = FORMAT_ASTC_6x6; break;
+    case 0x93B5: case 0x93D5: textureData->format = FORMAT_ASTC_8x5; break;
+    case 0x93B6: case 0x93D6: textureData->format = FORMAT_ASTC_8x6; break;
+    case 0x93B7: case 0x93D7: textureData->format = FORMAT_ASTC_8x8; break;
+    case 0x93B8: case 0x93D8: textureData->format = FORMAT_ASTC_10x5; break;
+    case 0x93B9: case 0x93D9: textureData->format = FORMAT_ASTC_10x6; break;
+    case 0x93BA: case 0x93DA: textureData->format = FORMAT_ASTC_10x8; break;
+    case 0x93BB: case 0x93DB: textureData->format = FORMAT_ASTC_10x10; break;
+    case 0x93BC: case 0x93DC: textureData->format = FORMAT_ASTC_12x10; break;
+    case 0x93BD: case 0x93DD: textureData->format = FORMAT_ASTC_12x12; break;
+    default: lovrThrow("Unsupported KTX format '%d' (please open an issue)", data.ktx->glInternalFormat);
   }
 
   uint32_t width = textureData->width = data.ktx->pixelWidth;
@@ -419,33 +436,47 @@ static bool parseASTC(uint8_t* bytes, size_t size, TextureData* textureData) {
 
   textureData->width = data.astc->width[0] + (data.astc->width[1] << 8) + (data.astc->width[2] << 16);
   textureData->height = data.astc->height[0] + (data.astc->height[1] << 8) + (data.astc->height[2] << 16);
+
+  size_t imageSize = ((textureData->width + bx - 1) / bx) * ((textureData->height + by - 1) / by) * (128 / 8);
+
+  if (imageSize > size - sizeof(ASTCHeader)) {
+    return false;
+  }
+
+  textureData->mipmapCount = 1;
   textureData->mipmaps = malloc(sizeof(Mipmap));
   textureData->mipmaps[0] = (Mipmap) {
     .width = textureData->width,
     .height = textureData->height,
-    .data = data.astc + 1,
-    .size = size - sizeof(*data.astc)
+    .data = data.u8 + sizeof(ASTCHeader),
+    .size = imageSize
   };
 
   return true;
 }
 
-TextureData* lovrTextureDataInit(TextureData* textureData, uint32_t width, uint32_t height, uint8_t value, TextureFormat format) {
-  lovrAssert(width > 0 && height > 0, "TextureData dimensions must be positive");
-  lovrAssert(format < FORMAT_DXT1, "Blank TextureData cannot be compressed");
+TextureData* lovrTextureDataInit(TextureData* textureData, uint32_t width, uint32_t height, Blob* contents, uint8_t value, TextureFormat format) {
   size_t pixelSize = getPixelSize(format);
   size_t size = width * height * pixelSize;
+  lovrAssert(width > 0 && height > 0, "TextureData dimensions must be positive");
+  lovrAssert(format < FORMAT_DXT1, "Blank TextureData cannot be compressed");
+  lovrAssert(!contents || contents->size >= size, "TextureData Blob is too small (%d bytes needed, got %d)", size, contents->size);
   textureData->width = width;
   textureData->height = height;
   textureData->format = format;
-  textureData->blob.size = size;
-  textureData->blob.data = malloc(size);
-  lovrAssert(textureData->blob.data, "Out of memory");
-  memset(textureData->blob.data, value, size);
+  void* data = malloc(size);
+  lovrAssert(data, "Out of memory");
+  if (contents) {
+    memcpy(data, contents->data, size);
+  } else {
+    memset(data, value, size);
+  }
+  textureData->blob = lovrBlobCreate(data, size, "TextureData plain");
   return textureData;
 }
 
 TextureData* lovrTextureDataInitFromBlob(TextureData* textureData, Blob* blob, bool flip) {
+  textureData->blob = lovrAlloc(Blob);
   if (parseDDS(blob->data, blob->size, textureData)) {
     textureData->source = blob;
     lovrRetain(blob);
@@ -463,16 +494,38 @@ TextureData* lovrTextureDataInitFromBlob(TextureData* textureData, Blob* blob, b
   int width, height;
   int length = (int) blob->size;
   stbi_set_flip_vertically_on_load(flip);
-  if (stbi_is_hdr_from_memory(blob->data, length)) {
+  if (stbi_is_16_bit_from_memory(blob->data, length)) {
+    int channels;
+    textureData->blob->data = stbi_load_16_from_memory(blob->data, length, &width, &height, &channels, 0);
+    switch (channels) {
+      case 1:
+        textureData->format = FORMAT_R16;
+        textureData->blob->size = 2 * width * height;
+        break;
+      case 2:
+        textureData->format = FORMAT_RG16;
+        textureData->blob->size = 4 * width * height;
+        break;
+      case 4:
+        textureData->format = FORMAT_RGBA16;
+        textureData->blob->size = 8 * width * height;
+        break;
+      default:
+        lovrThrow("Unsupported channel count for 16 bit image: %d", channels);
+    }
+  } else if (stbi_is_hdr_from_memory(blob->data, length)) {
     textureData->format = FORMAT_RGBA32F;
-    textureData->blob.data = stbi_loadf_from_memory(blob->data, length, &width, &height, NULL, 4);
+    textureData->blob->data = stbi_loadf_from_memory(blob->data, length, &width, &height, NULL, 4);
+    textureData->blob->size = 16 * width * height;
   } else {
     textureData->format = FORMAT_RGBA;
-    textureData->blob.data = stbi_load_from_memory(blob->data, length, &width, &height, NULL, 4);
+    textureData->blob->data = stbi_load_from_memory(blob->data, length, &width, &height, NULL, 4);
+    textureData->blob->size = 4 * width * height;
   }
 
-  if (!textureData->blob.data) {
+  if (!textureData->blob->data) {
     lovrThrow("Could not load texture data from '%s'", blob->name);
+    lovrRelease(Blob, textureData->blob);
     free(textureData);
     return NULL;
   }
@@ -484,11 +537,11 @@ TextureData* lovrTextureDataInitFromBlob(TextureData* textureData, Blob* blob, b
 }
 
 Color lovrTextureDataGetPixel(TextureData* textureData, uint32_t x, uint32_t y) {
-  lovrAssert(textureData->blob.data, "TextureData does not have any pixel data");
+  lovrAssert(textureData->blob->data, "TextureData does not have any pixel data");
   lovrAssert(x < textureData->width && y < textureData->height, "getPixel coordinates must be within TextureData bounds");
   size_t index = (textureData->height - (y + 1)) * textureData->width + x;
   size_t pixelSize = getPixelSize(textureData->format);
-  uint8_t* u8 = (uint8_t*) textureData->blob.data + pixelSize * index;
+  uint8_t* u8 = (uint8_t*) textureData->blob->data + pixelSize * index;
   float* f32 = (float*) u8;
   switch (textureData->format) {
     case FORMAT_RGB: return (Color) { u8[0] / 255.f, u8[1] / 255.f, u8[2] / 255.f, 1.f };
@@ -501,11 +554,11 @@ Color lovrTextureDataGetPixel(TextureData* textureData, uint32_t x, uint32_t y) 
 }
 
 void lovrTextureDataSetPixel(TextureData* textureData, uint32_t x, uint32_t y, Color color) {
-  lovrAssert(textureData->blob.data, "TextureData does not have any pixel data");
+  lovrAssert(textureData->blob->data, "TextureData does not have any pixel data");
   lovrAssert(x < textureData->width && y < textureData->height, "setPixel coordinates must be within TextureData bounds");
   size_t index = (textureData->height - (y + 1)) * textureData->width + x;
   size_t pixelSize = getPixelSize(textureData->format);
-  uint8_t* u8 = (uint8_t*) textureData->blob.data + pixelSize * index;
+  uint8_t* u8 = (uint8_t*) textureData->blob->data + pixelSize * index;
   float* f32 = (float*) u8;
   switch (textureData->format) {
     case FORMAT_RGB:
@@ -541,19 +594,16 @@ void lovrTextureDataSetPixel(TextureData* textureData, uint32_t x, uint32_t y, C
   }
 }
 
-static void writeCallback(void* context, void* data, int size) {
-  const char* filename = context;
-  lovrFilesystemWrite(filename, data, size, false);
-}
-
 bool lovrTextureDataEncode(TextureData* textureData, const char* filename) {
-  lovrAssert(textureData->format == FORMAT_RGB || textureData->format == FORMAT_RGBA, "Only RGB and RGBA TextureData can be encoded");
-  int components = textureData->format == FORMAT_RGB ? 3 : 4;
-  int width = textureData->width;
-  int height = textureData->height;
-  void* data = (uint8_t*) textureData->blob.data + (textureData->height - 1) * textureData->width * components;
-  int stride = -1 * (int) (textureData->width * components);
-  return stbi_write_png_to_func(writeCallback, (void*) filename, width, height, components, data, stride);
+  lovrAssert(textureData->format == FORMAT_RGBA, "Only RGBA TextureData can be encoded");
+  uint8_t* pixels = (uint8_t*) textureData->blob->data + (textureData->height - 1) * textureData->width * 4;
+  int32_t stride = -1 * (int) (textureData->width * 4);
+  size_t size;
+  void* data = png_encode(pixels, textureData->width, textureData->height, stride, &size);
+  if (!data) return false;
+  lovrFilesystemWrite(filename, data, size, false);
+  free(data);
+  return true;
 }
 
 void lovrTextureDataPaste(TextureData* textureData, TextureData* source, uint32_t dx, uint32_t dy, uint32_t sx, uint32_t sy, uint32_t w, uint32_t h) {
@@ -562,8 +612,8 @@ void lovrTextureDataPaste(TextureData* textureData, TextureData* source, uint32_
   size_t pixelSize = getPixelSize(textureData->format);
   lovrAssert(dx + w <= textureData->width && dy + h <= textureData->height, "Attempt to paste outside of destination TextureData bounds");
   lovrAssert(sx + w <= source->width && sy + h <= source->height, "Attempt to paste from outside of source TextureData bounds");
-  uint8_t* src = (uint8_t*) source->blob.data + ((source->height - 1 - sy) * source->width + sx) * pixelSize;
-  uint8_t* dst = (uint8_t*) textureData->blob.data + ((textureData->height - 1 - dy) * textureData->width + sx) * pixelSize;
+  uint8_t* src = (uint8_t*) source->blob->data + ((source->height - 1 - sy) * source->width + sx) * pixelSize;
+  uint8_t* dst = (uint8_t*) textureData->blob->data + ((textureData->height - 1 - dy) * textureData->width + sx) * pixelSize;
   for (uint32_t y = 0; y < h; y++) {
     memcpy(dst, src, w * pixelSize);
     src -= source->width * pixelSize;
@@ -575,5 +625,5 @@ void lovrTextureDataDestroy(void* ref) {
   TextureData* textureData = ref;
   lovrRelease(Blob, textureData->source);
   free(textureData->mipmaps);
-  lovrBlobDestroy(ref);
+  lovrRelease(Blob, textureData->blob);
 }
