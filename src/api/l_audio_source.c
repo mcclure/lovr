@@ -7,6 +7,18 @@ static int l_lovrSourcePlay(lua_State* L) {
   return 0;
 }
 
+static int l_lovrSourceStop(lua_State* L) {
+  Source* source = luax_checktype(L, 1, Source);
+  lovrSourceStop(source);
+  return 0;
+}
+
+static int l_lovrSourceIsPlaying(lua_State* L) {
+  Source* source = luax_checktype(L, 1, Source);
+  lua_pushboolean(L, lovrSourceIsPlaying(source));
+  return 1;
+}
+
 static int l_lovrSourceIsLooping(lua_State* L) {
   Source* source = luax_checktype(L, 1, Source);
   lua_pushboolean(L, lovrSourceIsLooping(source));
@@ -34,6 +46,8 @@ static int l_lovrSourceSetVolume(lua_State* L) {
 
 const luaL_Reg lovrSource[] = {
   { "play", l_lovrSourcePlay },
+  { "stop", l_lovrSourceStop },
+  { "isPlaying", l_lovrSourceIsPlaying },
   { "isLooping", l_lovrSourceIsLooping },
   { "setLooping", l_lovrSourceSetLooping },
   { "getVolume", l_lovrSourceGetVolume },
