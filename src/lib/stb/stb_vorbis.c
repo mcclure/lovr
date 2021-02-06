@@ -1,60 +1,5 @@
 #include "stb_vorbis.h"
 
-// Ogg Vorbis audio decoder - v1.09 - public domain
-// http://nothings.org/stb_vorbis/
-//
-// Original version written by Sean Barrett in 2007.
-//
-// Originally sponsored by RAD Game Tools. Seeking sponsored
-// by Phillip Bennefall, Marc Andersen, Aaron Baker, Elias Software,
-// Aras Pranckevicius, and Sean Barrett.
-//
-// LICENSE
-//
-//   This software is dual-licensed to the public domain and under the following
-//   license: you are granted a perpetual, irrevocable license to copy, modify,
-//   publish, and distribute this file as you see fit.
-//
-// No warranty for any purpose is expressed or implied by the author (nor
-// by RAD Game Tools). Report bugs and send enhancements to the author.
-//
-// Limitations:
-//
-//   - floor 0 not supported (used in old ogg vorbis files pre-2004)
-//   - lossless sample-truncation at beginning ignored
-//   - cannot concatenate multiple vorbis streams
-//   - sample positions are 32-bit, limiting seekable 192Khz
-//       files to around 6 hours (Ogg supports 64-bit)
-//
-// Feature contributors:
-//    Dougall Johnson (sample-exact seeking)
-//
-// Bugfix/warning contributors:
-//    Terje Mathisen     Niklas Frykholm     Andy Hill
-//    Casey Muratori     John Bolton         Gargaj
-//    Laurent Gomila     Marc LeBlanc        Ronny Chevalier
-//    Bernhard Wodo      Evan Balster        alxprd@github
-//    Tom Beaumont       Ingo Leitgeb        Nicolas Guillemot
-//    Phillip Bennefall  Rohit               Thiago Goulart
-//    manxorist@github   saga musix
-//
-// Partial history:
-//    1.09    - 2016/04/04 - back out 'truncation of last frame' fix from previous version
-//    1.08    - 2016/04/02 - warnings; setup memory leaks; truncation of last frame
-//    1.07    - 2015/01/16 - fixes for crashes on invalid files; warning fixes; const
-//    1.06    - 2015/08/31 - full, correct support for seeking API (Dougall Johnson)
-//                           some crash fixes when out of memory or with corrupt files
-//                           fix some inappropriately signed shifts
-//    1.05    - 2015/04/19 - don't define __forceinline if it's redundant
-//    1.04    - 2014/08/27 - fix missing const-correct case in API
-//    1.03    - 2014/08/07 - warning fixes
-//    1.02    - 2014/07/09 - declare qsort comparison as explicitly _cdecl in Windows
-//    1.01    - 2014/06/18 - fix stb_vorbis_get_samples_float (interleaved was correct)
-//    1.0     - 2014/05/26 - fix memory leaks; fix warnings; fix bugs in >2-channel;
-//                           (API change) report sample rate for decode-full-file funcs
-//
-// See end of file for full version history.
-
 #ifndef STB_VORBIS_HEADER_ONLY
 
 // global configuration settings (e.g. set these in the project/makefile),
@@ -211,7 +156,9 @@
 #endif
 #endif
 
-
+#ifdef STB_VORBIS_LOVRFILE
+#include "modules/filesystem/file.h"
+#endif
 #ifndef STB_VORBIS_NO_STDIO
 #include <stdio.h>
 #endif
@@ -223,7 +170,7 @@
    #include <math.h>
 
    // find definition of alloca if it's not in stdlib.h:
-   #ifdef _MSC_VER
+   #if defined(_MSC_VER) || defined(__MINGW32__)
       #include <malloc.h>
    #endif
    #if defined(__linux__) || defined(__linux) || defined(__EMSCRIPTEN__) || defined(__APPLE__)
@@ -248,6 +195,7 @@
    #undef __forceinline
    #endif
    #define __forceinline
+   #define alloca __builtin_alloca
 #elif !defined(_MSC_VER)
    #if __GNUC__
       #define __forceinline inline
@@ -422,11 +370,9 @@ struct stb_vorbis
    unsigned int setup_temp_memory_required;
 
   // input config
-#ifndef STB_VORBIS_NO_STDIO
-   FILE *f;
+   File *f;
    uint32 f_start;
    int close_on_free;
-#endif
 
    uint8 *stream;
    uint8 *stream_start;
@@ -550,11 +496,7 @@ static int error(vorb *f, enum STBVorbisError e)
 #define array_size_required(count,size)  (count*(sizeof(void *)+(size)))
 
 #define temp_alloc(f,size)              (f->alloc.alloc_buffer ? setup_temp_malloc(f,size) : alloca(size))
-#ifdef dealloca
-#define temp_free(f,p)                  (f->alloc.alloc_buffer ? 0 : dealloca(size))
-#else
 #define temp_free(f,p)                  0
-#endif
 #define temp_alloc_save(f)              ((f)->temp_offset)
 #define temp_alloc_restore(f,p)         ((f)->temp_offset = (p))
 
@@ -654,17 +596,18 @@ static int ilog(int32 n)
 {
    static signed char log2_4[16] = { 0,1,2,2,3,3,3,3,4,4,4,4,4,4,4,4 };
 
+   if (n < 0) return 0; // signed n returns 0
+
    // 2 compares if n < 16, 3 compares otherwise (4 if signed or n > 1<<29)
    if (n < (1 << 14))
-        if (n < (1 <<  4))        return     0 + log2_4[n      ];
-        else if (n < (1 <<  9))      return  5 + log2_4[n >>  5];
+        if (n < (1 <<  4))            return  0 + log2_4[n      ];
+        else if (n < (1 <<  9))       return  5 + log2_4[n >>  5];
              else                     return 10 + log2_4[n >> 10];
    else if (n < (1 << 24))
-             if (n < (1 << 19))      return 15 + log2_4[n >> 15];
+             if (n < (1 << 19))       return 15 + log2_4[n >> 15];
              else                     return 20 + log2_4[n >> 20];
-        else if (n < (1 << 29))      return 25 + log2_4[n >> 25];
-             else if (n < (1 << 31)) return 30 + log2_4[n >> 30];
-                  else                return 0; // signed n returns 0
+        else if (n < (1 << 29))       return 25 + log2_4[n >> 25];
+             else                     return 30 + log2_4[n >> 30];
 }
 
 #ifndef M_PI
@@ -742,7 +685,7 @@ static int compute_codewords(Codebook *c, uint8 *len, int n, uint32 *values)
       assert(z >= 0 && z < 32);
       available[z] = 0;
       add_entry(c, bit_reverse(res), i, m++, len[i], values);
-      // propogate availability up the tree
+      // propagate availability up the tree
       if (z != len[i]) {
          assert(len[i] >= 0 && len[i] < 32);
          for (y=len[i]; y > z; --y) {
@@ -937,13 +880,13 @@ static void neighbors(uint16 *x, int n, int *plow, int *phigh)
 // this has been repurposed so y is now the original index instead of y
 typedef struct
 {
-   uint16 x,y;
-} Point;
+   uint16 x,id;
+} stbv__floor_ordering;
 
 static int STBV_CDECL point_compare(const void *p, const void *q)
 {
-   Point *a = (Point *) p;
-   Point *b = (Point *) q;
+   stbv__floor_ordering *a = (stbv__floor_ordering *) p;
+   stbv__floor_ordering *b = (stbv__floor_ordering *) q;
    return a->x < b->x ? -1 : a->x > b->x;
 }
 
@@ -951,7 +894,7 @@ static int STBV_CDECL point_compare(const void *p, const void *q)
 /////////////////////// END LEAF SETUP FUNCTIONS //////////////////////////
 
 
-#if defined(STB_VORBIS_NO_STDIO)
+#if defined(STB_VORBIS_NO_STDIO) && !defined(STB_VORBIS_LOVRFILE)
    #define USE_MEMORY(z)    TRUE
 #else
    #define USE_MEMORY(z)    ((z)->stream)
@@ -964,7 +907,13 @@ static uint8 get8(vorb *z)
       return *z->stream++;
    }
 
-   #ifndef STB_VORBIS_NO_STDIO
+   #ifdef STB_VORBIS_LOVRFILE
+   uint8 v;
+   if (!lovrFileRead(z->f, &v, 1)) {
+      z->eof = TRUE; return 0;
+   }
+   return v;
+   #elif !defined(STB_VORBIS_NO_STDIO)
    {
    int c = fgetc(z->f);
    if (c == EOF) { z->eof = TRUE; return 0; }
@@ -992,7 +941,13 @@ static int getn(vorb *z, uint8 *data, int n)
       return 1;
    }
 
-   #ifndef STB_VORBIS_NO_STDIO   
+   #ifdef STB_VORBIS_LOVRFILE
+   uint8 v;
+   if (!lovrFileRead(z->f, data, n)) {
+      z->eof = TRUE; return 0;
+   }
+   return 1;
+   #elif !defined(STB_VORBIS_NO_STDIO)
    if (fread(data, n, 1, z->f) == 1)
       return 1;
    else {
@@ -1009,7 +964,12 @@ static void skip(vorb *z, int n)
       if (z->stream >= z->stream_end) z->eof = 1;
       return;
    }
-   #ifndef STB_VORBIS_NO_STDIO
+   #ifdef STB_VORBIS_LOVRFILE
+   {
+      long x = lovrFileTell(z->f);
+      lovrFileSeek(z->f, x+n);
+   }   
+   #elif !defined(STB_VORBIS_NO_STDIO)
    {
       long x = ftell(z->f);
       fseek(z->f, x+n, SEEK_SET);
@@ -1033,17 +993,24 @@ static int set_file_offset(stb_vorbis *f, unsigned int loc)
          return 1;
       }
    }
-   #ifndef STB_VORBIS_NO_STDIO
+   #if !defined(STB_VORBIS_NO_STDIO) || defined(STB_VORBIS_LOVRFILE)
    if (loc + f->f_start < loc || loc >= 0x80000000) {
       loc = 0x7fffffff;
       f->eof = 1;
    } else {
       loc += f->f_start;
    }
+   #if defined(STB_VORBIS_LOVRFILE)
+   if (!lovrFileSeek(f->f, loc))
+      return 1;
+   f->eof = 1;
+   lovrFileSeek(f->f, f->f_start);
+   #else
    if (!fseek(f->f, loc, SEEK_SET))
       return 1;
    f->eof = 1;
    fseek(f->f, f->f_start, SEEK_END);
+   #endif
    return 0;
    #endif
 }
@@ -1711,6 +1678,8 @@ static int residue_decode(vorb *f, Codebook *book, float *target, int offset, in
    return TRUE;
 }
 
+// n is 1/2 of the blocksize --
+// specification: "Correct per-vector decode length is [n]/2"
 static void decode_residue(vorb *f, float *residue_buffers[], int ch, int n, int rn, uint8 *do_not_decode)
 {
    int i,j,pass;
@@ -1718,7 +1687,10 @@ static void decode_residue(vorb *f, float *residue_buffers[], int ch, int n, int
    int rtype = f->residue_types[rn];
    int c = r->classbook;
    int classwords = f->codebooks[c].dimensions;
-   int n_read = r->end - r->begin;
+   unsigned int actual_size = rtype == 2 ? n*2 : n;
+   unsigned int limit_r_begin = (r->begin < actual_size ? r->begin : actual_size);
+   unsigned int limit_r_end   = (r->end   < actual_size ? r->end   : actual_size);
+   int n_read = limit_r_end - limit_r_begin;
    int part_read = n_read / r->part_size;
    int temp_alloc_point = temp_alloc_save(f);
    #ifndef STB_VORBIS_DIVIDES_IN_RESIDUE
@@ -2301,7 +2273,7 @@ static void inverse_mdct(float *buffer, int n, vorb *f, int blocktype)
    // once I combined the passes.
 
    // so there's a missing 'times 2' here (for adding X to itself).
-   // this propogates through linearly to the end, where the numbers
+   // this propagates through linearly to the end, where the numbers
    // are 1/2 too small, and need to be compensated for.
 
    {
@@ -3060,7 +3032,7 @@ static int vorbis_decode_packet_rest(vorb *f, int *len, Mode *m, int left_start,
    if (f->last_seg_which == f->end_seg_with_known_loc) {
       // if we have a valid current loc, and this is final:
       if (f->current_loc_valid && (f->page_flag & PAGEFLAG_last_page)) {
-         uint32 current_end = f->known_loc_for_packet - (n-right_end);
+         uint32 current_end = f->known_loc_for_packet;
          // then let's infer the size of the (probably) short final frame
          if (current_end < f->current_loc + (right_end-left_start)) {
             if (current_end < f->current_loc) {
@@ -3069,7 +3041,7 @@ static int vorbis_decode_packet_rest(vorb *f, int *len, Mode *m, int left_start,
             } else {
                *len = current_end - f->current_loc;
             }
-            *len += left_start;
+            *len += left_start; // this doesn't seem right, but has no ill effect on my test files
             if (*len > right_end) *len = right_end; // this should never happen
             f->current_loc += *len;
             return TRUE;
@@ -3152,11 +3124,13 @@ static int vorbis_finish_frame(stb_vorbis *f, int len, int left, int right)
    return right - left;
 }
 
-static void vorbis_pump_first_frame(stb_vorbis *f)
+static int vorbis_pump_first_frame(stb_vorbis *f)
 {
-   int len, right, left;
-   if (vorbis_decode_packet(f, &len, &left, &right))
+   int len, right, left, res;
+   res = vorbis_decode_packet(f, &len, &left, &right);
+   if (res)
       vorbis_finish_frame(f, len, left, right);
+   return res;
 }
 
 #ifndef STB_VORBIS_NO_PUSHDATA_API
@@ -3240,7 +3214,22 @@ static int start_decoder(vorb *f)
    if (f->page_flag & PAGEFLAG_continued_packet)    return error(f, VORBIS_invalid_first_page);
    // check for expected packet length
    if (f->segment_count != 1)                       return error(f, VORBIS_invalid_first_page);
-   if (f->segments[0] != 30)                        return error(f, VORBIS_invalid_first_page);
+   if (f->segments[0] != 30) {
+      // check for the Ogg skeleton fishead identifying header to refine our error
+      if (f->segments[0] == 64 &&
+          getn(f, header, 6) &&
+          header[0] == 'f' &&
+          header[1] == 'i' &&
+          header[2] == 's' &&
+          header[3] == 'h' &&
+          header[4] == 'e' &&
+          header[5] == 'a' &&
+          get8(f)   == 'd' &&
+          get8(f)   == '\0')                        return error(f, VORBIS_ogg_skeleton_not_supported);
+      else
+                                                    return error(f, VORBIS_invalid_first_page);
+   }
+
    // read packet
    // check packet header
    if (get8(f) != VORBIS_packet_id)                 return error(f, VORBIS_invalid_first_page);
@@ -3539,7 +3528,7 @@ static int start_decoder(vorb *f)
             g->book_list[j] = get_bits(f,8);
          return error(f, VORBIS_feature_not_supported);
       } else {
-         Point p[31*8+2];
+         stbv__floor_ordering p[31*8+2];
          Floor1 *g = &f->floor_config[i].floor1;
          int max_class = -1; 
          g->partitions = get_bits(f, 5);
@@ -3575,11 +3564,11 @@ static int start_decoder(vorb *f)
          // precompute the sorting
          for (j=0; j < g->values; ++j) {
             p[j].x = g->Xlist[j];
-            p[j].y = j;
+            p[j].id = j;
          }
          qsort(p, g->values, sizeof(p[0]), point_compare);
          for (j=0; j < g->values; ++j)
-            g->sorted_order[j] = (uint8) p[j].y;
+            g->sorted_order[j] = (uint8) p[j].id;
          // precompute the neighbors
          for (j=2; j < g->values; ++j) {
             int low,hi;
@@ -3717,6 +3706,7 @@ static int start_decoder(vorb *f)
       f->previous_window[i] = (float *) setup_malloc(f, sizeof(float) * f->blocksize_1/2);
       f->finalY[i]          = (int16 *) setup_malloc(f, sizeof(int16) * longest_floorlist);
       if (f->channel_buffers[i] == NULL || f->previous_window[i] == NULL || f->finalY[i] == NULL) return error(f, VORBIS_outofmem);
+      memset(f->channel_buffers[i], 0, sizeof(float) * f->blocksize_1);
       #ifdef STB_VORBIS_NO_DEFER_FLOOR
       f->floor_buffers[i]   = (float *) setup_malloc(f, sizeof(float) * f->blocksize_1/2);
       if (f->floor_buffers[i] == NULL) return error(f, VORBIS_outofmem);
@@ -3744,7 +3734,10 @@ static int start_decoder(vorb *f)
       int i,max_part_read=0;
       for (i=0; i < f->residue_count; ++i) {
          Residue *r = f->residue_config + i;
-         int n_read = r->end - r->begin;
+         unsigned int actual_size = f->blocksize_1 / 2;
+         unsigned int limit_r_begin = r->begin < actual_size ? r->begin : actual_size;
+         unsigned int limit_r_end   = r->end   < actual_size ? r->end   : actual_size;
+         int n_read = limit_r_end - limit_r_begin;
          int part_read = n_read / r->part_size;
          if (part_read > max_part_read)
             max_part_read = part_read;
@@ -3754,6 +3747,8 @@ static int start_decoder(vorb *f)
       #else
       classify_mem = f->channels * (sizeof(void*) + max_part_read * sizeof(int *));
       #endif
+
+      // maximum reasonable partition size is f->blocksize_1
 
       f->temp_memory_required = classify_mem;
       if (imdct_mem > f->temp_memory_required)
@@ -3825,7 +3820,9 @@ static void vorbis_deinit(stb_vorbis *p)
       setup_free(p, p->window[i]);
       setup_free(p, p->bit_reverse[i]);
    }
-   #ifndef STB_VORBIS_NO_STDIO
+   #ifdef STB_VORBIS_LOVRFILE
+   if (p->close_on_free) { lovrFileClose(p->f); free(p->f); }
+   #elif !defined(STB_VORBIS_NO_STDIO)
    if (p->close_on_free) fclose(p->f);
    #endif
 }
@@ -3850,7 +3847,7 @@ static void vorbis_init(stb_vorbis *p, const stb_vorbis_alloc *z)
    p->stream = NULL;
    p->codebooks = NULL;
    p->page_crc_tests = -1;
-   #ifndef STB_VORBIS_NO_STDIO
+   #if !defined(STB_VORBIS_NO_STDIO) || defined(STB_VORBIS_LOVRFILE)
    p->close_on_free = FALSE;
    p->f = NULL;
    #endif
@@ -4100,7 +4097,9 @@ unsigned int stb_vorbis_get_file_offset(stb_vorbis *f)
    if (f->push_mode) return 0;
    #endif
    if (USE_MEMORY(f)) return (unsigned int) (f->stream - f->stream_start);
-   #ifndef STB_VORBIS_NO_STDIO
+   #ifdef STB_VORBIS_LOVRFILE
+   return (unsigned int) (lovrFileTell(f->f) - f->f_start);
+   #elif !defined(STB_VORBIS_NO_STDIO)
    return (unsigned int) (ftell(f->f) - f->f_start);
    #endif
 }
@@ -4222,7 +4221,7 @@ static int get_seek_page_info(stb_vorbis *f, ProbedPage *z)
    return 1;
 }
 
-// rarely used function to seek back to the preceeding page while finding the
+// rarely used function to seek back to the preceding page while finding the
 // start of a packet
 static int go_to_page_before(stb_vorbis *f, unsigned int limit_offset)
 {
@@ -4283,8 +4282,9 @@ static int seek_to_sample_coarse(stb_vorbis *f, uint32 sample_number)
 
    // starting from the start is handled differently
    if (sample_number <= left.last_decoded_sample) {
-      stb_vorbis_seek_start(f);
-      return 1;
+      if (stb_vorbis_seek_start(f))
+         return 1;
+      return 0;
    }
 
    while (left.page_end != right.page_start) {
@@ -4385,7 +4385,10 @@ static int seek_to_sample_coarse(stb_vorbis *f, uint32 sample_number)
       skip(f, f->segments[i]);
 
    // start decoding (optimizable - this frame is generally discarded)
-   vorbis_pump_first_frame(f);
+   if (!vorbis_pump_first_frame(f))
+      return 0;
+   if (f->current_loc > sample_number)
+      return error(f, VORBIS_seek_failed);
    return 1;
 
 error:
@@ -4476,14 +4479,14 @@ int stb_vorbis_seek(stb_vorbis *f, unsigned int sample_number)
    return 1;
 }
 
-void stb_vorbis_seek_start(stb_vorbis *f)
+int stb_vorbis_seek_start(stb_vorbis *f)
 {
-   if (IS_PUSH_MODE(f)) { error(f, VORBIS_invalid_api_mixing); return; }
+   if (IS_PUSH_MODE(f)) { return error(f, VORBIS_invalid_api_mixing); }
    set_file_offset(f, f->first_audio_page_offset);
    f->previous_length = 0;
    f->first_decode = TRUE;
    f->next_seg = -1;
-   vorbis_pump_first_frame(f);
+   return vorbis_pump_first_frame(f);
 }
 
 unsigned int stb_vorbis_stream_length_in_samples(stb_vorbis *f)
@@ -4590,14 +4593,24 @@ int stb_vorbis_get_frame_float(stb_vorbis *f, int *channels, float ***output)
    return len;
 }
 
-#ifndef STB_VORBIS_NO_STDIO
+#if !defined(STB_VORBIS_NO_STDIO) || defined(STB_VORBIS_LOVRFILE)
 
-stb_vorbis * stb_vorbis_open_file_section(FILE *file, int close_on_free, int *error, const stb_vorbis_alloc *alloc, unsigned int length)
+#ifdef STB_VORBIS_LOVRFILE
+   typedef File VorbisFile;
+#else
+   typedef FILE VorbisFile;
+#endif
+
+stb_vorbis * stb_vorbis_open_file_section(VorbisFile *file, int close_on_free, int *error, const stb_vorbis_alloc *alloc, unsigned int length)
 {
    stb_vorbis *f, p;
    vorbis_init(&p, alloc);
    p.f = file;
+   #ifdef STB_VORBIS_LOVRFILE
+   p.f_start = (uint32) lovrFileTell(file);
+   #else
    p.f_start = (uint32) ftell(file);
+   #endif
    p.stream_len   = length;
    p.close_on_free = close_on_free;
    if (start_decoder(&p)) {
@@ -4613,19 +4626,39 @@ stb_vorbis * stb_vorbis_open_file_section(FILE *file, int close_on_free, int *er
    return NULL;
 }
 
-stb_vorbis * stb_vorbis_open_file(FILE *file, int close_on_free, int *error, const stb_vorbis_alloc *alloc)
+stb_vorbis * stb_vorbis_open_file(VorbisFile *file, int close_on_free, int *error, const stb_vorbis_alloc *alloc)
 {
    unsigned int len, start;
+#ifdef STB_VORBIS_LOVRFILE
+   start = (unsigned int) lovrFileTell(file);
+   len = (unsigned int) (lovrFileGetSize(file) - start);
+#else
    start = (unsigned int) ftell(file);
    fseek(file, 0, SEEK_END);
    len = (unsigned int) (ftell(file) - start);
    fseek(file, start, SEEK_SET);
+#endif
    return stb_vorbis_open_file_section(file, close_on_free, error, alloc, len);
 }
 
 stb_vorbis * stb_vorbis_open_filename(const char *filename, int *error, const stb_vorbis_alloc *alloc)
 {
-   FILE *f = fopen(filename, "rb");
+#ifdef STB_VORBIS_LOVRFILE
+   File* f = (File *)malloc(sizeof(File));
+   lovrFileInit(f, filename);
+   if (!lovrFileOpen(f, OPEN_READ)) {
+      free(f);
+      f = NULL;
+   }
+#else
+   VorbisFile *f;
+#if defined(_WIN32) && defined(__STDC_WANT_SECURE_LIB__)
+   if (0 != fopen_s(&f, filename, "rb"))
+      f = NULL;
+#else
+   f = fopen(filename, "rb");
+#endif
+#endif
    if (f) 
       return stb_vorbis_open_file(f, TRUE, error, alloc);
    if (error) *error = VORBIS_file_open_failure;
@@ -4648,6 +4681,7 @@ stb_vorbis * stb_vorbis_open_memory(const unsigned char *data, int len, int *err
       if (f) {
          *f = p;
          vorbis_pump_first_frame(f);
+         if (error) *error = VORBIS__no_error;
          return f;
       }
    }
@@ -5013,19 +5047,22 @@ int stb_vorbis_get_samples_float(stb_vorbis *f, int channels, float **buffer, in
 #endif // STB_VORBIS_NO_PULLDATA_API
 
 /* Version history
-    1.09    - 2016/04/04 - back out 'avoid discarding last frame' fix from previous version
-    1.08    - 2016/04/02 - fixed multiple warnings; fix setup memory leaks;
+    1.12    - 2017-11-21 - limit residue begin/end to blocksize/2 to avoid large temp allocs in bad/corrupt files
+    1.11    - 2017-07-23 - fix MinGW compilation 
+    1.10    - 2017-03-03 - more robust seeking; fix negative ilog(); clear error in open_memory
+    1.09    - 2016-04-04 - back out 'avoid discarding last frame' fix from previous version
+    1.08    - 2016-04-02 - fixed multiple warnings; fix setup memory leaks;
                            avoid discarding last frame of audio data
-    1.07    - 2015/01/16 - fixed some warnings, fix mingw, const-correct API
+    1.07    - 2015-01-16 - fixed some warnings, fix mingw, const-correct API
                            some more crash fixes when out of memory or with corrupt files 
-    1.06    - 2015/08/31 - full, correct support for seeking API (Dougall Johnson)
+    1.06    - 2015-08-31 - full, correct support for seeking API (Dougall Johnson)
                            some crash fixes when out of memory or with corrupt files
-    1.05    - 2015/04/19 - don't define __forceinline if it's redundant
-    1.04    - 2014/08/27 - fix missing const-correct case in API
-    1.03    - 2014/08/07 - Warning fixes
-    1.02    - 2014/07/09 - Declare qsort compare function _cdecl on windows
-    1.01    - 2014/06/18 - fix stb_vorbis_get_samples_float
-    1.0     - 2014/05/26 - fix memory leaks; fix warnings; fix bugs in multichannel
+    1.05    - 2015-04-19 - don't define __forceinline if it's redundant
+    1.04    - 2014-08-27 - fix missing const-correct case in API
+    1.03    - 2014-08-07 - Warning fixes
+    1.02    - 2014-07-09 - Declare qsort compare function _cdecl on windows
+    1.01    - 2014-06-18 - fix stb_vorbis_get_samples_float
+    1.0     - 2014-05-26 - fix memory leaks; fix warnings; fix bugs in multichannel
                            (API change) report sample rate for decode-full-file funcs
     0.99996 - bracket #include <malloc.h> for macintosh compilation by Laurent Gomila
     0.99995 - use union instead of pointer-cast for fast-float-to-int to avoid alias-optimization problem
@@ -5065,3 +5102,46 @@ int stb_vorbis_get_samples_float(stb_vorbis *f, int channels, float **buffer, in
 */
 
 #endif // STB_VORBIS_HEADER_ONLY
+
+
+/*
+------------------------------------------------------------------------------
+This software is available under 2 licenses -- choose whichever you prefer.
+------------------------------------------------------------------------------
+ALTERNATIVE A - MIT License
+Copyright (c) 2017 Sean Barrett
+Permission is hereby granted, free of charge, to any person obtaining a copy of 
+this software and associated documentation files (the "Software"), to deal in 
+the Software without restriction, including without limitation the rights to 
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies 
+of the Software, and to permit persons to whom the Software is furnished to do 
+so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all 
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE 
+SOFTWARE.
+------------------------------------------------------------------------------
+ALTERNATIVE B - Public Domain (www.unlicense.org)
+This is free and unencumbered software released into the public domain.
+Anyone is free to copy, modify, publish, use, compile, sell, or distribute this 
+software, either in source code form or as a compiled binary, for any purpose, 
+commercial or non-commercial, and by any means.
+In jurisdictions that recognize copyright laws, the author or authors of this 
+software dedicate any and all copyright interest in the software to the public 
+domain. We make this dedication for the benefit of the public at large and to 
+the detriment of our heirs and successors. We intend this dedication to be an 
+overt act of relinquishment in perpetuity of all present and future rights to 
+this software under copyright law.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN 
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION 
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+------------------------------------------------------------------------------
+*/

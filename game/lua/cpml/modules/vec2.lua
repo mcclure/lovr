@@ -322,6 +322,14 @@ function vec2.to_polar(a)
 	return radius, theta
 end
 
+-- Call function on all components of a vector.
+-- @tparam vec2 a Vector to map.
+-- @tparam f a function to map, optionally followed by arguments. 
+-- @treturn vec2 Modified vector
+function vec2.map(a, f, ...)
+	return vec2.new(f(a.x, ...), f(a.y, ...))
+end
+
 -- Round all components to nearest int (or other precision).
 -- @tparam vec2 a Vector to round.
 -- @tparam precision Digits after the decimal (round numebr if unspecified)

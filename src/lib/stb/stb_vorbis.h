@@ -1,5 +1,65 @@
 #define STB_VORBIS_NO_PUSHDATA_API
 #define STB_VORBIS_NO_STDIO
+#define STB_VORBIS_LOVRFILE
+
+// Ogg Vorbis audio decoder - v1.16 - public domain
+// http://nothings.org/stb_vorbis/
+//
+// Original version written by Sean Barrett in 2007.
+//
+// Originally sponsored by RAD Game Tools. Seeking implementation
+// sponsored by Phillip Bennefall, Marc Andersen, Aaron Baker,
+// Elias Software, Aras Pranckevicius, and Sean Barrett.
+//
+// LICENSE
+//
+//   See end of file for license information.
+//
+// Limitations:
+//
+//   - floor 0 not supported (used in old ogg vorbis files pre-2004)
+//   - lossless sample-truncation at beginning ignored
+//   - cannot concatenate multiple vorbis streams
+//   - sample positions are 32-bit, limiting seekable 192Khz
+//       files to around 6 hours (Ogg supports 64-bit)
+//
+// Feature contributors:
+//    Dougall Johnson (sample-exact seeking)
+//
+// Bugfix/warning contributors:
+//    Terje Mathisen     Niklas Frykholm     Andy Hill
+//    Casey Muratori     John Bolton         Gargaj
+//    Laurent Gomila     Marc LeBlanc        Ronny Chevalier
+//    Bernhard Wodo      Evan Balster        alxprd@github
+//    Tom Beaumont       Ingo Leitgeb        Nicolas Guillemot
+//    Phillip Bennefall  Rohit               Thiago Goulart
+//    manxorist@github   saga musix          github:infatum
+//    Timur Gagiev
+//
+// Partial history:
+//    1.16    - 2019-03-04 - fix warnings
+//    1.15    - 2019-02-07 - explicit failure if Ogg Skeleton data is found
+//    1.14    - 2018-02-11 - delete bogus dealloca usage
+//    1.13    - 2018-01-29 - fix truncation of last frame (hopefully)
+//    1.12    - 2017-11-21 - limit residue begin/end to blocksize/2 to avoid large temp allocs in bad/corrupt files
+//    1.11    - 2017-07-23 - fix MinGW compilation 
+//    1.10    - 2017-03-03 - more robust seeking; fix negative ilog(); clear error in open_memory
+//    1.09    - 2016-04-04 - back out 'truncation of last frame' fix from previous version
+//    1.08    - 2016-04-02 - warnings; setup memory leaks; truncation of last frame
+//    1.07    - 2015-01-16 - fixes for crashes on invalid files; warning fixes; const
+//    1.06    - 2015-08-31 - full, correct support for seeking API (Dougall Johnson)
+//                           some crash fixes when out of memory or with corrupt files
+//                           fix some inappropriately signed shifts
+//    1.05    - 2015-04-19 - don't define __forceinline if it's redundant
+//    1.04    - 2014-08-27 - fix missing const-correct case in API
+//    1.03    - 2014-08-07 - warning fixes
+//    1.02    - 2014-07-09 - declare qsort comparison as explicitly _cdecl in Windows
+//    1.01    - 2014-06-18 - fix stb_vorbis_get_samples_float (interleaved was correct)
+//    1.0     - 2014-05-26 - fix memory leaks; fix warnings; fix bugs in >2-channel;
+//                           (API change) report sample rate for decode-full-file funcs
+//
+// See end of file for full version history.
+
 
 //////////////////////////////////////////////////////////////////////////////
 //
@@ -188,6 +248,10 @@ extern stb_vorbis * stb_vorbis_open_memory(const unsigned char *data, int len,
 // create an ogg vorbis decoder from an ogg vorbis stream in memory (note
 // this must be the entire stream!). on failure, returns NULL and sets *error
 
+#ifdef STB_VORBIS_LOVRFILE
+extern stb_vorbis * stb_vorbis_open_filename(const char *filename,
+                                  int *error, const stb_vorbis_alloc *alloc_buffer);
+#endif
 #ifndef STB_VORBIS_NO_STDIO
 extern stb_vorbis * stb_vorbis_open_filename(const char *filename,
                                   int *error, const stb_vorbis_alloc *alloc_buffer);
@@ -199,7 +263,7 @@ extern stb_vorbis * stb_vorbis_open_file(FILE *f, int close_handle_on_close,
 // create an ogg vorbis decoder from an open FILE *, looking for a stream at
 // the _current_ seek point (ftell). on failure, returns NULL and sets *error.
 // note that stb_vorbis must "own" this stream; if you seek it in between
-// calls to stb_vorbis, it will become confused. Morever, if you attempt to
+// calls to stb_vorbis, it will become confused. Moreover, if you attempt to
 // perform stb_vorbis_seek_*() operations on this file, it will assume it
 // owns the _entire_ rest of the file after the start point. Use the next
 // function, stb_vorbis_open_file_section(), to limit it.
@@ -222,7 +286,7 @@ extern int stb_vorbis_seek(stb_vorbis *f, unsigned int sample_number);
 // do not need to seek to EXACTLY the target sample when using get_samples_*,
 // you can also use seek_frame().
 
-extern void stb_vorbis_seek_start(stb_vorbis *f);
+extern int stb_vorbis_seek_start(stb_vorbis *f);
 // this function is equivalent to stb_vorbis_seek(f,0)
 
 extern unsigned int stb_vorbis_stream_length_in_samples(stb_vorbis *f);
@@ -320,7 +384,8 @@ enum STBVorbisError
    VORBIS_invalid_first_page,
    VORBIS_bad_packet_type,
    VORBIS_cant_find_last_page,
-   VORBIS_seek_failed
+   VORBIS_seek_failed,
+   VORBIS_ogg_skeleton_not_supported
 };
 
 

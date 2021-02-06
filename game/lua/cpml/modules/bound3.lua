@@ -3,6 +3,7 @@
 
 local modules = (...):gsub('%.[^%.]+$', '') .. "."
 local vec3    = require(modules .. "vec3")
+local utils   = require(modules .. "utils")
 
 local bound3    = {}
 local bound3_mt = {}
@@ -166,6 +167,14 @@ end
 function bound3.contains(a, v)
 	return a.min.x <= v.x and a.min.y <= v.y and a.min.z <= v.z
 	   and a.max.x >= v.x and a.max.y >= v.y and a.max.z >= v.z
+end
+
+--- Clamp point within bound
+-- @tparam bound2 a bound
+-- @tparam vec2 point to test
+-- @treturn vec2 point within bound as close to test point as possible
+function bound3.clamp(a, v)
+	return vec3(utils.clamp(v.x, a.min.x, a.max.x), utils.clamp(v.y, a.min.y, a.max.y), utils.clamp(v.z, a.min.z, a.max.z))
 end
 
 -- Round all components of all vectors to nearest int (or other precision).

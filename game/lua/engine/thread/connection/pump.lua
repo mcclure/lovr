@@ -11,7 +11,7 @@ local PumpEnt = classNamed("PumpEnt", Ent)
 -- methods:
 --     send(kind, ...): send message to the other side
 
-function read(channel, force)
+local function read(channel, force)
 	if not force then return channel:pop(false) end
 	while true do
 		local v = channel:pop(0.1)

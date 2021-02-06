@@ -265,6 +265,14 @@ function vec3.lerp(a, b, s)
 	return a + (b - a) * s
 end
 
+-- Call function on all components of a vector.
+-- @tparam vec3 a Vector to map.
+-- @tparam f a function to map, optionally followed by arguments. 
+-- @treturn vec3 Modified vector
+function vec3.map(a, f, ...)
+	return vec3.new(f(a.x, ...), f(a.y, ...), f(a.z, ...))
+end
+
 -- Round all components to nearest int (or other precision).
 -- @tparam vec3 a Vector to round.
 -- @tparam precision Digits after the decimal (round numebr if unspecified)
@@ -299,22 +307,22 @@ function vec3.component_max(a, b)
 end
 
 -- Negate x axis only of vector.
--- @tparam vec2 a Vector to x-flip.
--- @treturn vec2 x-flipped vector
+-- @tparam vec3 a Vector to x-flip.
+-- @treturn vec3 x-flipped vector
 function vec3.flip_x(a)
 	return vec3.new(-a.x, a.y, a.z)
 end
 
 -- Negate y axis only of vector.
--- @tparam vec2 a Vector to y-flip.
--- @treturn vec2 y-flipped vector
+-- @tparam vec3 a Vector to y-flip.
+-- @treturn vec3 y-flipped vector
 function vec3.flip_y(a)
 	return vec3.new(a.x, -a.y, a.z)
 end
 
 -- Negate z axis only of vector.
--- @tparam vec2 a Vector to z-flip.
--- @treturn vec2 z-flipped vector
+-- @tparam vec3 a Vector to z-flip.
+-- @treturn vec3 z-flipped vector
 function vec3.flip_z(a)
 	return vec3.new(a.x, a.y, -a.z)
 end
@@ -339,6 +347,13 @@ end
 -- @treturn boolean is_zero
 function vec3.is_zero(a)
 	return a.x == 0 and a.y == 0 and a.z == 0
+end
+
+-- Convert vec3 to vec3. (Useful if you don't know whether something is a vec2 or vec3.)
+-- @tparam vec3 a Vector to convert.
+-- @treturn vec3 the same Vector.
+function vec3.to_vec3(a)
+	return a
 end
 
 --- Return a formatted string.

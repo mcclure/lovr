@@ -482,9 +482,9 @@ function RouteMouseEnt.mouseCoordinatesConvertVector(x,y)
 end
 
 function RouteMouseEnt:onLoad()
-	local function route(key, x, y)
+	local function route(key, x, y, ...)
 		local inx, iny = RouteMouseEnt.mouseCoordinatesConvert(x,y)
-		ent.root:route(key, vec2(inx, iny)) -- FIXME: Better routing?
+		ent.root:route(key, vec2(inx, iny), ...) -- FIXME: Better routing?
 	end
 
 	lovr.handlers['mousepressed'] = function(x,y)
@@ -493,6 +493,10 @@ function RouteMouseEnt:onLoad()
 
 	lovr.handlers['mousereleased'] = function(x,y)
 		route("onRelease", x, y)
+	end
+
+	lovr.handlers['wheelmoved'] = function(wx, wy, x, y)
+		route("onWheel", x, y, wx, wy) -- Notice argument order differs between lovr and lovr-ent
 	end
 end
 
@@ -916,12 +920,16 @@ end
 --     onSelects: table of onSelect(self, tag) methods, keyed by id
 ui2.SelectEnt = classNamed("SelectEnt", ui2.LayoutEnt)
 
+ui2.SelectEnt.noSelection = {} -- Magic value (actually not magic, just unique)
+
 function ui2.SelectEnt:_init(spec)
 	self:super(spec)
 	self.count = self.count or #self.labels
 
 	local hadSelects = toboolean(self.onSelects)
-	local selected = self.selected or (self.tags and self.tags[1] or 1)
+	if not self.selected then
+		self.selected = self.tags and self.tags[1] or 1
+	end
 	local managed
 	managed = spec.managed or mapRange(self.count, function(i)
 		local tag = self.tags and self.tags[i] or i
@@ -941,7 +949,7 @@ function ui2.SelectEnt:_init(spec)
 				mouse.trackPress() -- Don't let anything else process this click
 				return route_poison
 			end
-		end, down=selected==tag}
+		end, down=self.selected==tag}
 	end)
 	self.layout.managed = managed
 	self.labels = nil self.onSelects = nil self.tags = nil

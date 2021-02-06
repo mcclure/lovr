@@ -145,6 +145,15 @@ local function mouseTrackingPressDone()
   end
 end
 
+-- "Tracking" is a concept unique to the lovr-ent branch of lovr-mouse.
+-- The idea is on a mouse down event, the handler can request that mousedown be "tracked".
+-- KBAM (in desktop.c) will then be disabled until the track is finished,
+-- and events related to the tracked drag will be exclusively sent to the track handler.
+-- This serves two purposes: One, it lets you do click-drags without moving the desktop.c camera,
+-- and two, it allows ui2 to ensure once an ent starts handling an event, only that ent handles it.
+-- Bjorn considers this entire feature out of scope for lovr-mouse, so probably at some point
+-- I will remove this whole thing and move the logic up into ui2.
+-- Note: The KBAM disable only works with my (Andi's) branch of lovr.
 function mouse.trackPress(callback, initial, ...)
   if haveKbamSymbols == nil then
     haveKbamSymbols = require "engine.fakeKbamSymbols"
@@ -197,10 +206,11 @@ C.glfwSetCursorPosCallback(window, function(target, x, y)
   end
 end)
 
-C.glfwSetScrollCallback(window, function(target, x, y)
+C.glfwSetScrollCallback(window, function(target, wx, wy)
   if target == window then
+    local x, y = mouse.getPosition()
     local scale = mouse.getScale()
-    lovr.event.push('wheelmoved', x * scale, y * scale)
+    lovr.event.push('wheelmoved', wx, wy, x * scale, y * scale)
   end
 end)
 
