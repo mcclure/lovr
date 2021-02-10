@@ -8,7 +8,7 @@
 # DEBUG: Include debug symbols in the build, increasing file size.
 # OPTIMIZE: Make the executable faster and smaller, but compile slower.
 # SANITIZE: Add extra runtime checks to detect memory leaks and undefined behavior (adds overhead).
-# CMAKE_DEPS: Assume libraries were built by CMake in the `build` folder.
+# CMAKE_DEPS: If building dependencies with CMake, set this to the CMake build folder.
 # EXTRA_CFLAGS: Additional compiler flags (e.g. libraries, warnings).
 # EXTRA_LDFLAGS: Additional linker flags.
 # PLATFORM: The platform to compile for (win32, macos, linux, android, web, or blank to autodetect).
@@ -17,7 +17,7 @@ CONFIG_STRICT=y
 CONFIG_DEBUG=y
 CONFIG_OPTIMIZE=n
 CONFIG_SANITIZE=n
-CONFIG_CMAKE_DEPS=y
+CONFIG_CMAKE_DEPS=build
 CONFIG_EXTRA_CFLAGS=
 CONFIG_EXTRA_LDFLAGS=
 CONFIG_PLATFORM=
@@ -46,21 +46,29 @@ CONFIG_OPENVR=y
 CONFIG_OPENXR=n
 CONFIG_OCULUS=n
 CONFIG_VRAPI=n
-CONFIG_WEBVR=n
+CONFIG_PICO=n
 CONFIG_WEBXR=n
-CONFIG_LEAP=n
 CONFIG_OCULUS_PATH=
-CONFIG_LEAP_PATH=
 
 ## LuaJIT
 CONFIG_LUAJIT=y
 
-## OpenGL flavor
-# Can be GL, GLES, or WEBGL.  Ideally this should be autodetected though.
-CONFIG_GL=GL
-
-## Experimental renderer settings
-# GPU enables the core/gpu renderer
-# GPU_BACKEND is used to select the backend (gl, vk, wg)
-CONFIG_GPU=n
-CONFIG_GPU_BACKEND=gl
+## Android settings
+# ANDROID_SDK: The path to the Android SDK
+# ANDROID_NDK: The path to the Android NDK
+# ANDROID_VERSION: The Android version to build against (usually 21 or 26)
+# ANDROID_BUILD_TOOLS_VERSION: The version of the Android build tools to use (in build-tools folder)
+# ANDROID_HOST_TAG: The host machine tag (e.g. windows-x86_64, darwin-x86_64)
+# ANDROID_KEYSTORE: The path to the keystore (use keytool to generate)
+# ANDROID_KEYSTORE_PASS: The keystore password (use either pass:<string>, env:<var>, or file:<path>)
+# ANDROID_MANIFEST: Optional path to a custom Android manifest file (xml)
+# ANDROID_ASSETS: Optional path to a folder to embed as the assets folder of the apk
+CONFIG_ANDROID_SDK=
+CONFIG_ANDROID_NDK=
+CONFIG_ANDROID_VERSION=
+CONFIG_ANDROID_BUILD_TOOLS_VERSION=
+CONFIG_ANDROID_HOST_TAG=
+CONFIG_ANDROID_KEYSTORE=
+CONFIG_ANDROID_KEYSTORE_PASS=
+CONFIG_ANDROID_MANIFEST=
+CONFIG_ANDROID_ASSETS=

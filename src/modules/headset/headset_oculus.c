@@ -24,6 +24,7 @@ static struct {
   float clipFar;
   ovrSizei size;
   Canvas* canvas;
+  float supersample;
   ovrTextureSwapChain chain;
   ovrMirrorTexture mirror;
   float hapticFrequency[2];
@@ -41,7 +42,7 @@ static Texture* lookupTexture(uint32_t handle) {
   if (index == MAP_NIL) {
     index = state.textures.length;
     map_set(&state.textureLookup, hash, index);
-    arr_push(&state.textures, lovrTextureCreateFromHandle(handle, TEXTURE_2D, 1));
+    arr_push(&state.textures, lovrTextureCreateFromHandle(handle, TEXTURE_2D, 1, 1));
   }
 
   return state.textures.data[index];
@@ -83,7 +84,7 @@ static ovrInputState *refreshButtons(void) {
   return &is;
 }
 
-static bool oculus_init(float offset, uint32_t msaa) {
+static bool oculus_init(float supersample, float offset, uint32_t msaa) {
   ovrResult result = ovr_Initialize(NULL);
   if (OVR_FAILURE(result)) {
     return false;
@@ -101,6 +102,7 @@ static bool oculus_init(float offset, uint32_t msaa) {
   state.needRefreshButtons = true;
   state.clipNear = .1f;
   state.clipFar = 100.f;
+  state.supersample = supersample;
 
   map_init(&state.textureLookup, 4);
 
@@ -287,10 +289,6 @@ static bool oculus_isTouched(Device device, DeviceButton button, bool* touched) 
   }
 }
 
-static bool oculus_didChange(Device device, DeviceButton button, bool* changed) {
-  return false; // TODO
-}
-
 static bool oculus_getAxis(Device device, DeviceAxis axis, vec3 value) {
   if (device != DEVICE_HAND_LEFT && device != DEVICE_HAND_RIGHT) {
     return false;
@@ -322,13 +320,15 @@ static bool oculus_vibrate(Device device, float strength, float duration, float 
   return true;
 }
 
-static ModelData* oculus_newModelData(Device device) {
+static ModelData* oculus_newModelData(Device device, bool animated) {
   return NULL; // TODO
 }
 
 static void oculus_renderTo(void (*callback)(void*), void* userdata) {
   if (!state.canvas) {
     state.size = ovr_GetFovTextureSize(state.session, ovrEye_Left, state.desc.DefaultEyeFov[ovrEye_Left], 1.0f);
+    state.size.w *= state.supersample;
+    state.size.h *= state.supersample;
 
     ovrTextureSwapChainDesc swdesc = {
       .Type = ovrTexture_2D,
@@ -360,17 +360,17 @@ static void oculus_renderTo(void (*callback)(void*), void* userdata) {
   double sensorSampleTime;
   getEyePoses(EyeRenderPose, &sensorSampleTime);
 
-  float delta = (float)(state.hapticLastTime - sensorSampleTime);
+  float delta = (float)(sensorSampleTime - state.hapticLastTime);
+  delta = MAX(delta, 0);
   state.hapticLastTime = sensorSampleTime;
   for (int i = 0; i < 2; ++i) {
     ovr_SetControllerVibration(state.session, ovrControllerType_LTouch + i, state.hapticFrequency[i], state.hapticStrength[i]);
     state.hapticDuration[i] -= delta;
     if (state.hapticDuration[i] <= 0.0f) {
       state.hapticStrength[i] = 0.0f;
+      state.hapticDuration[i] = 0.0f;
     }
   }
-
-  Camera camera = { .canvas = state.canvas };
 
   for (int eye = 0; eye < 2; eye++) {
     float orient[] = {
@@ -384,15 +384,16 @@ static void oculus_renderTo(void (*callback)(void*), void* userdata) {
       EyeRenderPose[eye].Position.y,
       EyeRenderPose[eye].Position.z
     };
-    mat4 transform = camera.viewMatrix[eye];
-    mat4_identity(transform);
-    mat4_rotateQuat(transform, orient);
-    transform[12] = -(transform[0] * pos[0] + transform[4] * pos[1] + transform[8] * pos[2]);
-    transform[13] = -(transform[1] * pos[0] + transform[5] * pos[1] + transform[9] * pos[2]);
-    transform[14] = -(transform[2] * pos[0] + transform[6] * pos[1] + transform[10] * pos[2]);
+    float view[16];
+    mat4_fromQuat(view, orient);
+    view[12] = -(view[0] * pos[0] + view[4] * pos[1] + view[8] * pos[2]);
+    view[13] = -(view[1] * pos[0] + view[5] * pos[1] + view[9] * pos[2]);
+    view[14] = -(view[2] * pos[0] + view[6] * pos[1] + view[10] * pos[2]);
+    lovrGraphicsSetViewMatrix(eye, view);
 
-    ovrMatrix4f projection = ovrMatrix4f_Projection(state.desc.DefaultEyeFov[eye], state.clipNear, state.clipFar, ovrProjection_ClipRangeOpenGL);
-    mat4_fromMat44(camera.projection[eye], projection.M);
+    float projection[16];
+    mat4_fromMat44(projection, ovrMatrix4f_Projection(state.desc.DefaultEyeFov[eye], state.clipNear, state.clipFar, ovrProjection_ClipRangeOpenGL).M);
+    lovrGraphicsSetProjection(eye, projection);
   }
 
   ovr_WaitToBeginFrame(state.session, state.frameIndex);
@@ -405,9 +406,9 @@ static void oculus_renderTo(void (*callback)(void*), void* userdata) {
   Texture* texture = lookupTexture(curTexId);
   lovrCanvasSetAttachments(state.canvas, &(Attachment) { texture, 0, 0 }, 1);
 
-  lovrGraphicsSetCamera(&camera, true);
+  lovrGraphicsSetBackbuffer(state.canvas, true, true);
   callback(userdata);
-  lovrGraphicsSetCamera(NULL, false);
+  lovrGraphicsSetBackbuffer(NULL, false, false);
 
   ovr_CommitTextureSwapChain(state.session, state.chain);
 

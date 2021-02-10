@@ -28,7 +28,7 @@ static const luaL_Reg* lovrVectorMetatables[] = {
   [V_MAT4] = lovrMat4
 };
 
-static int lovrVectorMetatableRefs[] = {
+static LOVR_THREAD_LOCAL int lovrVectorMetatableRefs[] = {
   [V_VEC2] = LUA_REFNIL,
   [V_VEC3] = LUA_REFNIL,
   [V_VEC4] = LUA_REFNIL,
@@ -74,7 +74,7 @@ float* luax_tovector(lua_State* L, int index, VectorType* type) {
 float* luax_checkvector(lua_State* L, int index, VectorType type, const char* expected) {
   VectorType t;
   float* p = luax_tovector(L, index, &t);
-  if (!p || t != type) luaL_typerror(L, index, expected ? expected : lovrVectorTypeNames[type]);
+  if (!p || t != type) luax_typeerror(L, index, expected ? expected : lovrVectorTypeNames[type]);
   return p;
 }
 
@@ -109,6 +109,13 @@ static int l_lovrMathNewCurve(lua_State* L) {
       lovrCurveAddPoint(curve, point, pointIndex++);
       i += 3 + components;
       lua_pop(L, 3);
+    }
+  } else if (top == 1 && lua_type(L, 1) == LUA_TNUMBER) {
+    float point[4] = { 0 };
+    int count = lua_tonumber(L, 1);
+    lovrAssert(count > 0, "Number of curve points must be positive");
+    for (int i = 0; i < count; i++) {
+      lovrCurveAddPoint(curve, point, i);
     }
   } else {
     int pointIndex = 0;
@@ -345,7 +352,7 @@ static int l_lovrLightUserdataOp(lua_State* L) {
 
 int luaopen_lovr_math(lua_State* L) {
   lua_newtable(L);
-  luaL_register(L, NULL, lovrMath);
+  luax_register(L, lovrMath);
   luax_registertype(L, Curve);
   luax_registertype(L, RandomGenerator);
 
@@ -353,7 +360,7 @@ int luaopen_lovr_math(lua_State* L) {
     lua_newtable(L);
     lua_pushstring(L, lovrVectorTypeNames[i]);
     lua_setfield(L, -2, "__name");
-    luaL_register(L, NULL, lovrVectorMetatables[i]);
+    luax_register(L, lovrVectorMetatables[i]);
     lovrVectorMetatableRefs[i] = luaL_ref(L, LUA_REGISTRYINDEX);
   }
 

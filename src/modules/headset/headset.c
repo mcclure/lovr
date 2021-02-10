@@ -1,15 +1,15 @@
 #include "headset/headset.h"
 #include "core/util.h"
 
-HeadsetInterface* lovrHeadsetDriver = NULL;
+HeadsetInterface* lovrHeadsetDisplayDriver = NULL;
 HeadsetInterface* lovrHeadsetTrackingDrivers = NULL;
 static bool initialized = false;
 
-bool lovrHeadsetInit(HeadsetDriver* drivers, size_t count, float offset, uint32_t msaa) {
+bool lovrHeadsetInit(HeadsetDriver* drivers, size_t count, float supersample, float offset, uint32_t msaa) {
   if (initialized) return false;
   initialized = true;
 
-  HeadsetInterface* lastTrackingDriver = NULL;
+  HeadsetInterface** trackingDrivers = &lovrHeadsetTrackingDrivers;
 
   for (size_t i = 0; i < count; i++) {
     HeadsetInterface* interface = NULL;
@@ -18,14 +18,8 @@ bool lovrHeadsetInit(HeadsetDriver* drivers, size_t count, float offset, uint32_
 #ifdef LOVR_USE_DESKTOP_HEADSET
       case DRIVER_DESKTOP: interface = &lovrHeadsetDesktopDriver; break;
 #endif
-#ifdef LOVR_USE_LEAP
-      case DRIVER_LEAP_MOTION: interface = &lovrHeadsetLeapMotionDriver; break;
-#endif
 #ifdef LOVR_USE_OCULUS
       case DRIVER_OCULUS: interface = &lovrHeadsetOculusDriver; break;
-#endif
-#ifdef LOVR_USE_OCULUS_MOBILE
-      case DRIVER_OCULUS_MOBILE: interface = &lovrHeadsetOculusMobileDriver; break;
 #endif
 #ifdef LOVR_USE_OPENVR
       case DRIVER_OPENVR: interface = &lovrHeadsetOpenVRDriver; break;
@@ -33,8 +27,11 @@ bool lovrHeadsetInit(HeadsetDriver* drivers, size_t count, float offset, uint32_
 #ifdef LOVR_USE_OPENXR
       case DRIVER_OPENXR: interface = &lovrHeadsetOpenXRDriver; break;
 #endif
-#ifdef LOVR_USE_WEBVR
-      case DRIVER_WEBVR: interface = &lovrHeadsetWebVRDriver; break;
+#ifdef LOVR_USE_VRAPI
+      case DRIVER_VRAPI: interface = &lovrHeadsetVrApiDriver; break;
+#endif
+#ifdef LOVR_USE_PICO
+      case DRIVER_PICO: interface = &lovrHeadsetPicoDriver; break;
 #endif
 #ifdef LOVR_USE_WEBXR
       case DRIVER_WEBXR: interface = &lovrHeadsetWebXRDriver; break;
@@ -43,24 +40,19 @@ bool lovrHeadsetInit(HeadsetDriver* drivers, size_t count, float offset, uint32_
     }
 
     bool hasDisplay = interface->renderTo != NULL;
-    bool shouldInitialize = !hasDisplay || !lovrHeadsetDriver;
+    bool shouldInitialize = !hasDisplay || !lovrHeadsetDisplayDriver;
 
-    if (shouldInitialize && interface->init(offset, msaa)) {
+    if (shouldInitialize && interface->init(supersample, offset, msaa)) {
       if (hasDisplay) {
-        lovrHeadsetDriver = interface;
+        lovrHeadsetDisplayDriver = interface;
       }
 
-      if (lastTrackingDriver) {
-        lastTrackingDriver->next = interface;
-      } else {
-        lovrHeadsetTrackingDrivers = interface;
-      }
-
-      lastTrackingDriver = interface;
+      *trackingDrivers = interface;
+      trackingDrivers = &interface->next;
     }
   }
 
-  lovrAssert(lovrHeadsetDriver, "No headset display driver available, check t.headset.drivers in conf.lua");
+  lovrAssert(lovrHeadsetDisplayDriver, "No headset display driver available, check t.headset.drivers in conf.lua");
   return true;
 }
 
@@ -70,7 +62,7 @@ void lovrHeadsetDestroy() {
 
   HeadsetInterface* driver = lovrHeadsetTrackingDrivers;
   while (driver) {
-    if (driver != lovrHeadsetDriver) {
+    if (driver != lovrHeadsetDisplayDriver) {
       driver->destroy();
     }
     HeadsetInterface* next = driver->next;
@@ -78,8 +70,8 @@ void lovrHeadsetDestroy() {
     driver = next;
   }
 
-  if (lovrHeadsetDriver) {
-    lovrHeadsetDriver->destroy();
-    lovrHeadsetDriver = NULL;
+  if (lovrHeadsetDisplayDriver) {
+    lovrHeadsetDisplayDriver->destroy();
+    lovrHeadsetDisplayDriver = NULL;
   }
 }

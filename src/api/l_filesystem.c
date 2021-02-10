@@ -100,18 +100,6 @@ static int l_lovrFilesystemGetAppdataDirectory(lua_State* L) {
 }
 
 
-static int l_lovrFilesystemGetApplicationId(lua_State *L) {
-  char buffer[LOVR_PATH_MAX];
-
-  if (lovrFilesystemGetApplicationId(buffer, sizeof(buffer))) {
-    lua_pushstring(L, buffer);
-  } else {
-    lua_pushnil(L);
-  }
-
-  return 1;
-}
-
 static int l_lovrFilesystemGetDirectoryItems(lua_State* L) {
   const char* path = luaL_checkstring(L, 1);
   lua_settop(L, 1);
@@ -303,7 +291,8 @@ static int l_lovrFilesystemRemove(lua_State* L) {
 
 static int l_lovrFilesystemSetIdentity(lua_State* L) {
   const char* identity = luaL_checkstring(L, 1);
-  lovrFilesystemSetIdentity(identity);
+  bool precedence = lua_toboolean(L, 2);
+  lovrFilesystemSetIdentity(identity, precedence);
   return 0;
 }
 
@@ -331,7 +320,6 @@ static const luaL_Reg lovrFilesystem[] = {
   { "append", l_lovrFilesystemAppend },
   { "createDirectory", l_lovrFilesystemCreateDirectory },
   { "getAppdataDirectory", l_lovrFilesystemGetAppdataDirectory },
-  { "getApplicationId", l_lovrFilesystemGetApplicationId },
   { "getDirectoryItems", l_lovrFilesystemGetDirectoryItems },
   { "getExecutablePath", l_lovrFilesystemGetExecutablePath },
   { "getIdentity", l_lovrFilesystemGetIdentity },
@@ -502,7 +490,7 @@ int luaopen_lovr_filesystem(lua_State* L) {
   }
 
   lua_newtable(L);
-  luaL_register(L, NULL, lovrFilesystem);
+  luax_register(L, lovrFilesystem);
   luax_registerloader(L, luaLoader, 2);
   luax_registerloader(L, libLoader, 3);
   return 1;

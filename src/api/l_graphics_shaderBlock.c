@@ -6,7 +6,7 @@
 
 static int l_lovrShaderBlockGetType(lua_State* L) {
   ShaderBlock* block = luax_checktype(L, 1, ShaderBlock);
-  luax_pushenum(L, BlockTypes, lovrShaderBlockGetType(block));
+  luax_pushenum(L, BlockType, lovrShaderBlockGetType(block));
   return 1;
 }
 
@@ -33,14 +33,14 @@ static int l_lovrShaderBlockSend(lua_State* L) {
     const Uniform* uniform = lovrShaderBlockGetUniform(block, name);
     lovrAssert(uniform, "Unknown uniform for ShaderBlock '%s'", name);
     Buffer* buffer = lovrShaderBlockGetBuffer(block);
-    uint8_t* data = lovrBufferMap(buffer, uniform->offset);
+    uint8_t* data = lovrBufferMap(buffer, uniform->offset, false);
     luax_checkuniform(L, 3, uniform, data, name);
     lovrBufferFlush(buffer, uniform->offset, uniform->size);
     return 0;
   } else {
     Blob* blob = luax_checktype(L, 2, Blob);
     Buffer* buffer = lovrShaderBlockGetBuffer(block);
-    void* data = lovrBufferMap(buffer, 0);
+    void* data = lovrBufferMap(buffer, 0, false);
     size_t bufferSize = lovrBufferGetSize(buffer);
     size_t copySize = MIN(bufferSize, blob->size);
     memcpy(data, blob->data, copySize);
@@ -57,7 +57,7 @@ static int l_lovrShaderBlockRead(lua_State* L) {
   lovrAssert(uniform, "Unknown uniform for ShaderBlock '%s'", name);
   Buffer* buffer = lovrShaderBlockGetBuffer(block);
   lovrAssert(lovrBufferIsReadable(buffer), "ShaderBlock:read requires the ShaderBlock to be created with the readable flag");
-  union { float* floats; int* ints; } data = { .floats = lovrBufferMap(buffer, uniform->offset) };
+  union { float* floats; int* ints; } data = { .floats = lovrBufferMap(buffer, uniform->offset, false) };
   int components = uniform->components;
 
   if (uniform->type == UNIFORM_MATRIX) {
@@ -103,8 +103,9 @@ static int l_lovrShaderBlockRead(lua_State* L) {
 static int l_lovrShaderBlockGetShaderCode(lua_State* L) {
   ShaderBlock* block = luax_checktype(L, 1, ShaderBlock);
   const char* blockName = luaL_checkstring(L, 2);
+  const char* namespace = luaL_optstring(L, 3, NULL);
   size_t length;
-  char* code = lovrShaderBlockGetShaderCode(block, blockName, &length);
+  char* code = lovrShaderBlockGetShaderCode(block, blockName, namespace, &length);
   lua_pushlstring(L, code, length);
   free(code);
   return 1;

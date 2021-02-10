@@ -27,7 +27,7 @@ static int l_lovrSourceGetCone(lua_State* L) {
 
 static int l_lovrSourceGetDuration(lua_State* L) {
   Source* source = luax_checktype(L, 1, Source);
-  TimeUnit unit = luax_checkenum(L, 2, TimeUnits, "seconds", "TimeUnit");
+  TimeUnit unit = luax_checkenum(L, 2, TimeUnit, "seconds");
   size_t duration = lovrSourceGetDuration(source);
 
   if (unit == UNIT_SECONDS) {
@@ -100,7 +100,7 @@ static int l_lovrSourceGetSampleRate(lua_State* L) {
 
 static int l_lovrSourceGetType(lua_State* L) {
   Source* source = luax_checktype(L, 1, Source);
-  luax_pushenum(L, SourceTypes, lovrSourceGetType(source));
+  luax_pushenum(L, SourceType, lovrSourceGetType(source));
   return 1;
 }
 
@@ -157,7 +157,7 @@ static int l_lovrSourcePlay(lua_State* L) {
 
 static int l_lovrSourceSeek(lua_State* L) {
   Source* source = luax_checktype(L, 1, Source);
-  TimeUnit unit = luax_checkenum(L, 3, TimeUnits, "seconds", "TimeUnit");
+  TimeUnit unit = luax_checkenum(L, 3, TimeUnit, "seconds");
 
   if (unit == UNIT_SECONDS) {
     float seconds = luax_checkfloat(L, 2);
@@ -172,9 +172,9 @@ static int l_lovrSourceSeek(lua_State* L) {
 
 static int l_lovrSourceSetCone(lua_State* L) {
   Source* source = luax_checktype(L, 1, Source);
-  float innerAngle = luax_checkfloat(L, 1);
-  float outerAngle = luax_checkfloat(L, 2);
-  float outerGain = luax_checkfloat(L, 3);
+  float innerAngle = luax_checkfloat(L, 2);
+  float outerAngle = luax_checkfloat(L, 3);
+  float outerGain = luax_checkfloat(L, 4);
   lovrSourceSetCone(source, innerAngle, outerAngle, outerGain);
   return 0;
 }
@@ -257,7 +257,7 @@ static int l_lovrSourceStop(lua_State* L) {
 
 static int l_lovrSourceTell(lua_State* L) {
   Source* source = luax_checktype(L, 1, Source);
-  TimeUnit unit = luax_checkenum(L, 2, TimeUnits, "seconds", "TimeUnit");
+  TimeUnit unit = luax_checkenum(L, 2, TimeUnit, "seconds");
   size_t offset = lovrSourceTell(source);
 
   if (unit == UNIT_SECONDS) {

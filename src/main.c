@@ -33,9 +33,7 @@ static void emscriptenLoop(void* arg) {
   lovrEmscriptenContext* context = arg;
   lua_State* T = context->T;
 
-  luax_geterror(T);
-  luax_clearerror(T);
-  if (lua_resume(T, 1) != LUA_YIELD) {
+  if (luax_resume(T, 0) != LUA_YIELD) {
     bool restart = lua_type(T, -1) == LUA_TSTRING && !strcmp(lua_tostring(T, -1), "restart");
     int status = lua_tonumber(T, -1);
 
@@ -138,7 +136,7 @@ int main(int argc, char** argv) {
 
     lua_getglobal(L, "package");
     lua_getfield(L, -1, "preload");
-    luaL_register(L, NULL, lovrModules);
+    luax_register(L, lovrModules);
     lua_pop(L, 2);
 
     lua_pushcfunction(L, luax_getstack);
@@ -152,6 +150,7 @@ int main(int argc, char** argv) {
     lua_xmove(L, T, 1);
 
     lovrSetErrorCallback(luax_vthrow, T);
+    lovrSetLogCallback(luax_vlog, T);
 
 #ifdef EMSCRIPTEN
     lovrEmscriptenContext context = { L, T, argc, argv };
@@ -159,7 +158,7 @@ int main(int argc, char** argv) {
     return 0;
 #endif
 
-    while (lua_resume(T, 0) == LUA_YIELD) {
+    while (luax_resume(T, 0) == LUA_YIELD) {
       lovrPlatformSleep(0.);
     }
 

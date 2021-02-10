@@ -92,9 +92,10 @@ typedef struct {
 
 static struct {
   bool initialized;
+  bool debug;
   int width;
   int height;
-  Camera camera;
+  Canvas* backbuffer;
   FrameData frameData;
   bool frameDataDirty;
   Canvas* defaultCanvas;
@@ -161,7 +162,7 @@ static void gammaCorrect(Color* color) {
   color->b = lovrMathGammaToLinear(color->b);
 }
 
-static void onCloseWindow(void) {
+static void onQuitRequest(void) {
   lovrEventPush((Event) { .type = EVENT_QUIT, .data.quit = { .exitCode = 0 } });
 }
 
@@ -177,18 +178,19 @@ static void* lovrGraphicsMapBuffer(StreamType type, uint32_t count) {
   lovrAssert(count <= bufferCount[type], "Whoa there!  Tried to get %d elements from a buffer that only has %d elements.", count, bufferCount[type]);
 
   if (state.head[type] + count > bufferCount[type]) {
-    lovrGraphicsFlush();
+    lovrAssert(state.batchCount == 0, "Internal error: Batches still exist during Buffer reset");
     lovrBufferDiscard(state.buffers[type]);
     state.tail[type] = 0;
     state.head[type] = 0;
   }
 
-  return lovrBufferMap(state.buffers[type], state.head[type] * bufferStride[type]);
+  return lovrBufferMap(state.buffers[type], state.head[type] * bufferStride[type], true);
 }
 
 // Base
 
-bool lovrGraphicsInit() {
+bool lovrGraphicsInit(bool debug) {
+  state.debug = debug;
   return false; // See lovrGraphicsCreateWindow for actual initialization
 }
 
@@ -221,14 +223,17 @@ void lovrGraphicsPresent() {
 }
 
 void lovrGraphicsCreateWindow(WindowFlags* flags) {
+  flags->debug = state.debug;
   lovrAssert(!state.initialized, "Window is already created");
   lovrAssert(lovrPlatformCreateWindow(flags), "Could not create window");
-  lovrPlatformOnWindowClose(onCloseWindow);
+  lovrPlatformSetSwapInterval(flags->vsync); // Force vsync in case lovr.headset changed it in a previous restart
+  lovrPlatformOnQuitRequest(onQuitRequest);
   lovrPlatformOnWindowResize(onResizeWindow);
   lovrPlatformGetFramebufferSize(&state.width, &state.height);
-  lovrGpuInit(lovrPlatformGetProcAddress);
+  lovrGpuInit(lovrPlatformGetProcAddress, state.debug);
 
   state.defaultCanvas = lovrCanvasCreateFromHandle(state.width, state.height, (CanvasFlags) { .stereo = false }, 0, 0, 0, 1, true);
+  state.backbuffer = state.defaultCanvas;
 
   for (int i = 0; i < MAX_STREAMS; i++) {
     state.buffers[i] = lovrBufferCreate(bufferCount[i] * bufferStride[i], NULL, bufferType[i], USAGE_STREAM, false);
@@ -237,7 +242,7 @@ void lovrGraphicsCreateWindow(WindowFlags* flags) {
   // The identity buffer is used for autoinstanced meshes and instanced primitives and maps the
   // instance ID to a vertex attribute.  Its contents never change, so they are initialized here.
   state.identityBuffer = lovrBufferCreate(MAX_DRAWS * sizeof(uint8_t), NULL, BUFFER_VERTEX, USAGE_STATIC, false);
-  uint8_t* id = lovrBufferMap(state.identityBuffer, 0);
+  uint8_t* id = lovrBufferMap(state.identityBuffer, 0, true);
   for (int i = 0; i < MAX_DRAWS; i++) id[i] = i;
   lovrBufferFlush(state.identityBuffer, 0, MAX_DRAWS);
   lovrBufferUnmap(state.identityBuffer);
@@ -276,9 +281,9 @@ int lovrGraphicsGetHeight() {
 }
 
 float lovrGraphicsGetPixelDensity() {
-  int width, framebufferWidth;
-  lovrPlatformGetWindowSize(&width, NULL);
-  lovrPlatformGetFramebufferSize(&framebufferWidth, NULL);
+  int width, height, framebufferWidth, framebufferHeight;
+  lovrPlatformGetWindowSize(&width, &height);
+  lovrPlatformGetFramebufferSize(&framebufferWidth, &framebufferHeight);
   if (width == 0 || framebufferWidth == 0) {
     return 0.f;
   } else {
@@ -286,40 +291,56 @@ float lovrGraphicsGetPixelDensity() {
   }
 }
 
-const Camera* lovrGraphicsGetCamera() {
-  return &state.camera;
-}
-
-void lovrGraphicsSetCamera(Camera* camera, bool clear) {
+void lovrGraphicsSetBackbuffer(Canvas* canvas, bool stereo, bool clear) {
   lovrGraphicsFlush();
 
-  if (state.camera.canvas && (!camera || camera->canvas != state.camera.canvas)) {
-    lovrCanvasResolve(state.camera.canvas);
+  if (!canvas) {
+    canvas = state.defaultCanvas;
+    lovrCanvasSetStereo(canvas, stereo);
   }
 
-  if (!camera) {
-    memset(&state.camera, 0, sizeof(Camera));
-    mat4_identity(state.camera.viewMatrix[0]);
-    mat4_identity(state.camera.viewMatrix[1]);
-    mat4_perspective(state.camera.projection[0], .01f, 100.f, 67.f * (float) M_PI / 180.f, (float) state.width / state.height);
-    mat4_perspective(state.camera.projection[1], .01f, 100.f, 67.f * (float) M_PI / 180.f, (float) state.width / state.height);
-    state.camera.canvas = state.defaultCanvas;
-    lovrCanvasSetStereo(state.camera.canvas, false);
-  } else {
-    state.camera = *camera;
-
-    if (!state.camera.canvas) {
-      state.camera.canvas = state.defaultCanvas;
-    lovrCanvasSetStereo(state.camera.canvas, camera->stereo);
-    }
+  if (canvas != state.backbuffer) {
+    lovrCanvasResolve(state.backbuffer);
+    state.backbuffer = canvas;
   }
-
-  memcpy(&state.frameData, &state.camera.viewMatrix[0][0], sizeof(FrameData));
-  state.frameDataDirty = true;
 
   if (clear) {
-    lovrGpuClear(state.camera.canvas, &state.linearBackgroundColor, &(float) { 1. }, &(int) { 0 });
+    lovrGpuClear(state.backbuffer, &state.linearBackgroundColor, &(float) { 1. }, &(int) { 0 });
   }
+}
+
+void lovrGraphicsGetViewMatrix(uint32_t index, float* viewMatrix) {
+  lovrAssert(index < 2, "Invalid view index %d", index);
+  mat4_init(viewMatrix, state.frameData.viewMatrix[index]);
+}
+
+void lovrGraphicsSetViewMatrix(uint32_t index, float* viewMatrix) {
+  lovrAssert(index < 2, "Invalid view index %d", index);
+  lovrGraphicsFlush();
+  if (viewMatrix) {
+    mat4_init(state.frameData.viewMatrix[index], viewMatrix);
+  } else {
+    mat4_identity(state.frameData.viewMatrix[index]);
+  }
+  state.frameDataDirty = true;
+}
+
+void lovrGraphicsGetProjection(uint32_t index, float* projection) {
+  lovrAssert(index < 2, "Invalid view index %d", index);
+  mat4_init(projection, state.frameData.projection[index]);
+}
+
+void lovrGraphicsSetProjection(uint32_t index, float* projection) {
+  lovrAssert(index < 2, "Invalid view index %d", index);
+  lovrGraphicsFlush();
+  if (projection) {
+    mat4_init(state.frameData.projection[index], projection);
+  } else {
+    float fov = 67.f * (float) M_PI / 180.f;
+    float aspect = (float) state.width / state.height;
+    mat4_perspective(state.frameData.projection[index], .01f, 100.f, fov, aspect);
+  }
+  state.frameDataDirty = true;
 }
 
 Buffer* lovrGraphicsGetIdentityBuffer() {
@@ -330,7 +351,10 @@ Buffer* lovrGraphicsGetIdentityBuffer() {
 
 void lovrGraphicsReset() {
   state.transform = 0;
-  lovrGraphicsSetCamera(NULL, false);
+  lovrGraphicsSetViewMatrix(0, NULL);
+  lovrGraphicsSetViewMatrix(1, NULL);
+  lovrGraphicsSetProjection(0, NULL);
+  lovrGraphicsSetProjection(1, NULL);
   lovrGraphicsSetAlphaSampling(false);
   lovrGraphicsSetBackgroundColor((Color) { 0, 0, 0, 1 });
   lovrGraphicsSetBlendMode(BLEND_ALPHA, BLEND_ALPHA_MULTIPLY);
@@ -364,7 +388,7 @@ Color lovrGraphicsGetBackgroundColor() {
 
 void lovrGraphicsSetBackgroundColor(Color color) {
   state.backgroundColor = state.linearBackgroundColor = color;
-#ifndef LOVR_WEBGL
+#if !defined(LOVR_WEBGL) && !defined(LOVR_USE_PICO)
   gammaCorrect(&state.linearBackgroundColor);
 #endif
 }
@@ -545,22 +569,13 @@ void lovrGraphicsMatrixTransform(mat4 transform) {
   mat4_multiply(state.transforms[state.transform], transform);
 }
 
-void lovrGraphicsSetProjection(mat4 projection) {
-  lovrGraphicsFlush();
-  mat4_set(state.camera.projection[0], projection);
-  mat4_set(state.camera.projection[1], projection);
-  mat4_set(state.frameData.projection[0], projection);
-  mat4_set(state.frameData.projection[1], projection);
-  state.frameDataDirty = true;
-}
-
 // Rendering
 
 static void lovrGraphicsBatch(BatchRequest* req) {
 
   // Resolve objects
   Mesh* mesh = req->mesh ? req->mesh : (req->instanced ? state.instancedMesh : state.mesh);
-  Canvas* canvas = state.canvas ? state.canvas : state.camera.canvas;
+  Canvas* canvas = state.canvas ? state.canvas : state.backbuffer;
   bool stereo = lovrCanvasIsStereo(canvas);
   Shader* shader = state.shader ? state.shader : (state.defaultShaders[req->shader][stereo] ? state.defaultShaders[req->shader][stereo] : (state.defaultShaders[req->shader][stereo] = lovrShaderCreateDefault(req->shader, NULL, 0, stereo)));
   Pipeline* pipeline = req->pipeline ? req->pipeline : &state.pipeline;
@@ -612,6 +627,23 @@ next:
   // write the ids much later.
   uint8_t* ids = NULL;
 
+  // Figure out if a flush is necessary before mapping buffers for vertex data or UBOs.
+  // - A flush is necessary if vertices are about to be written (during the first element of an
+  //   instanced batch or any element of a stream batch) and any of the ranges go past the end.
+  // - If a new batch is required but there isn't space for it, flush to make space.
+  // - If a new batch is required, make sure there is space for the matrix/color UBO streams.
+  // It's important to flush before mapping any streams, because flushing unmaps all streams.
+  bool needFlush = false;
+  bool hasVertices = req->vertexCount > 0 && (!req->instanced || !batch);
+  bool hasIndices = hasVertices && req->indexCount > 0;
+  needFlush = needFlush || (hasVertices && state.head[STREAM_VERTEX] + req->vertexCount > bufferCount[STREAM_VERTEX]);
+  needFlush = needFlush || (hasVertices && state.head[STREAM_DRAWID] + req->vertexCount > bufferCount[STREAM_DRAWID]);
+  needFlush = needFlush || (hasIndices && state.head[STREAM_INDEX] + req->indexCount > bufferCount[STREAM_INDEX]);
+  needFlush = needFlush || (!batch && state.batchCount >= MAX_BATCHES);
+  needFlush = needFlush || (!batch && state.head[STREAM_MODEL] + MAX_DRAWS > bufferCount[STREAM_MODEL]);
+  needFlush = needFlush || (!batch && state.head[STREAM_COLOR] + MAX_DRAWS > bufferCount[STREAM_COLOR]);
+  if (needFlush) lovrGraphicsFlush();
+
   if (req->vertexCount > 0 && (!req->instanced || !batch)) {
     *(req->vertices) = lovrGraphicsMapBuffer(STREAM_VERTEX, req->vertexCount);
     ids = lovrGraphicsMapBuffer(STREAM_DRAWID, req->vertexCount);
@@ -624,10 +656,6 @@ next:
 
   // Start a new batch
   if (!batch || state.batchCount == 0) {
-    if (state.batchCount >= MAX_BATCHES) {
-      lovrGraphicsFlush();
-    }
-
     float* transforms = lovrGraphicsMapBuffer(STREAM_MODEL, MAX_DRAWS);
     Color* colors = lovrGraphicsMapBuffer(STREAM_COLOR, MAX_DRAWS);
 
@@ -789,16 +817,16 @@ void lovrGraphicsFlushMesh(Mesh* mesh) {
 }
 
 void lovrGraphicsClear(Color* color, float* depth, int* stencil) {
-#ifndef LOVR_WEBGL
+#if !defined(LOVR_WEBGL) && !defined(LOVR_USE_PICO)
   if (color) gammaCorrect(color);
 #endif
   if (color || depth || stencil) lovrGraphicsFlush();
-  lovrGpuClear(state.canvas ? state.canvas : state.camera.canvas, color, depth, stencil);
+  lovrGpuClear(state.canvas ? state.canvas : state.backbuffer, color, depth, stencil);
 }
 
 void lovrGraphicsDiscard(bool color, bool depth, bool stencil) {
   if (color || depth || stencil) lovrGraphicsFlush();
-  lovrGpuDiscard(state.canvas ? state.canvas : state.camera.canvas, color, depth, stencil);
+  lovrGpuDiscard(state.canvas ? state.canvas : state.backbuffer, color, depth, stencil);
 }
 
 void lovrGraphicsPoints(uint32_t count, float** vertices) {

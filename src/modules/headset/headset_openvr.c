@@ -7,6 +7,7 @@
 #include "filesystem/filesystem.h"
 #include "graphics/graphics.h"
 #include "graphics/canvas.h"
+#include "graphics/model.h"
 #include "core/maf.h"
 #include "core/os.h"
 #include "core/ref.h"
@@ -75,14 +76,14 @@ static struct {
   VRActionHandle_t axisActions[2][MAX_AXES];
   VRActionHandle_t skeletonActions[2];
   VRActionHandle_t hapticActions[2];
+  VRInputValueHandle_t inputSources[3];
   TrackedDevicePose_t renderPoses[64];
-  RenderModel_t* deviceModels[64];
-  RenderModel_TextureMap_t* deviceTextures[64];
   Canvas* canvas;
   float* mask;
   float boundsGeometry[16];
   float clipNear;
   float clipFar;
+  float supersample;
   float offset;
   int msaa;
 } state;
@@ -97,7 +98,7 @@ static TrackedDeviceIndex_t getDeviceIndex(Device device) {
 }
 
 static bool openvr_getName(char* name, size_t length);
-static bool openvr_init(float offset, uint32_t msaa) {
+static bool openvr_init(float supersample, float offset, uint32_t msaa) {
   if (!VR_IsHmdPresent() || !VR_IsRuntimeInstalled()) {
     return false;
   }
@@ -201,8 +202,13 @@ static bool openvr_init(float offset, uint32_t msaa) {
   state.input->GetActionHandle("/actions/lovr/out/leftHandBZZ", &state.hapticActions[0]);
   state.input->GetActionHandle("/actions/lovr/out/rightHandBZZ", &state.hapticActions[1]);
 
+  state.input->GetInputSourceHandle("/user/head", &state.inputSources[DEVICE_HEAD]);
+  state.input->GetInputSourceHandle("/user/hand/left", &state.inputSources[DEVICE_HAND_LEFT]);
+  state.input->GetInputSourceHandle("/user/hand/right", &state.inputSources[DEVICE_HAND_RIGHT]);
+
   state.clipNear = 0.1f;
-  state.clipFar = 30.f;
+  state.clipFar = 100.f;
+  state.supersample = supersample;
   state.offset = state.compositor->GetTrackingSpace() == ETrackingUniverseOrigin_TrackingUniverseStanding ? 0. : offset;
   state.msaa = msaa;
 
@@ -211,16 +217,6 @@ static bool openvr_init(float offset, uint32_t msaa) {
 
 static void openvr_destroy(void) {
   lovrRelease(Canvas, state.canvas);
-  for (int i = 0; i < 16; i++) {
-    if (state.deviceModels[i]) {
-      state.renderModels->FreeRenderModel(state.deviceModels[i]);
-    }
-    if (state.deviceTextures[i]) {
-      state.renderModels->FreeTexture(state.deviceTextures[i]);
-    }
-    state.deviceModels[i] = NULL;
-    state.deviceTextures[i] = NULL;
-  }
   VR_ShutdownInternal();
   free(state.mask);
   memset(&state, 0, sizeof(state));
@@ -291,6 +287,7 @@ static bool openvr_getViewPose(uint32_t view, float* position, float* orientatio
   mat4_multiply(transform, mat4_fromMat34(offset, state.system->GetEyeToHeadTransform(eye).m));
   mat4_getPosition(transform, position);
   mat4_getOrientation(transform, orientation);
+  position[1] += state.offset;
 
   return view < 2;
 }
@@ -361,71 +358,28 @@ static bool openvr_getPose(Device device, vec3 position, quat orientation) {
     return pose->bPoseIsValid;
   }
 
-  Device hand;
   if (device == DEVICE_HAND_LEFT || device == DEVICE_HAND_RIGHT) {
-    hand = device;
-  } else if (device >= DEVICE_HAND_LEFT_FINGER_THUMB && device <= DEVICE_HAND_LEFT_FINGER_PINKY) {
-    hand = DEVICE_HAND_LEFT;
-  } else if (device >= DEVICE_HAND_RIGHT_FINGER_THUMB && device <= DEVICE_HAND_RIGHT_FINGER_PINKY) {
-    hand = DEVICE_HAND_RIGHT;
-  } else {
-    return false;
-  }
-
-  InputPoseActionData_t actionData;
-  state.input->GetPoseActionData(state.poseActions[hand], state.compositor->GetTrackingSpace(), 0.f, &actionData, sizeof(actionData), 0);
-  mat4_fromMat34(transform, actionData.pose.mDeviceToAbsoluteTracking.m);
-  transform[13] += state.offset;
-
-  // Early exit for hand pose
-  if (device == hand) {
+    InputPoseActionData_t action;
+    state.input->GetPoseActionDataForNextFrame(state.poseActions[device], state.compositor->GetTrackingSpace(), &action, sizeof(action), 0);
+    mat4_fromMat34(transform, action.pose.mDeviceToAbsoluteTracking.m);
+    transform[13] += state.offset;
     mat4_getPosition(transform, position);
     mat4_getOrientation(transform, orientation);
-    return actionData.pose.bPoseIsValid;
+    return action.pose.bPoseIsValid;
   }
 
-  InputSkeletalActionData_t info;
-  EVRInputError error = state.input->GetSkeletalActionData(state.skeletonActions[hand - DEVICE_HAND_LEFT], &info, sizeof(info));
-  if (error || !info.bActive) {
-    return false;
-  }
-
-  VRBoneTransform_t bones[31];
-  EVRSkeletalTransformSpace space = EVRSkeletalTransformSpace_VRSkeletalTransformSpace_Model;
-  EVRSkeletalMotionRange motionRange = EVRSkeletalMotionRange_VRSkeletalMotionRange_WithController;
-  error = state.input->GetSkeletalBoneData(state.skeletonActions[hand - DEVICE_HAND_LEFT], space, motionRange, bones, sizeof(bones) / sizeof(bones[0]));
-  if (error) {
-    return false;
-  }
-
-  uint32_t finger = (hand == DEVICE_HAND_LEFT) ? (device - DEVICE_HAND_LEFT_FINGER_THUMB) : (device - DEVICE_HAND_RIGHT_FINGER_THUMB);
-  uint32_t boneIndex;
-  switch (finger) {
-    case 0: boneIndex = eBone_Thumb3; break;
-    case 1: boneIndex = eBone_IndexFinger4; break;
-    case 2: boneIndex = eBone_MiddleFinger4; break;
-    case 3: boneIndex = eBone_RingFinger4; break;
-    case 4: boneIndex = eBone_PinkyFinger4; break;
-    default: return false;
-  }
-
-  VRBoneTransform_t* bone = &bones[boneIndex];
-  mat4_translate(transform, bone->position.v[0], bone->position.v[1], bone->position.v[2]);
-  mat4_rotateQuat(transform, (float[4]) { bone->orientation.w, bone->orientation.x, bone->orientation.y, bone->orientation.z });
-  mat4_getPosition(transform, position);
-  mat4_getOrientation(transform, orientation);
-  return true;
+  return false;
 }
 
 static bool openvr_getVelocity(Device device, vec3 velocity, vec3 angularVelocity) {
-  InputPoseActionData_t actionData;
+  InputPoseActionData_t action;
   TrackedDevicePose_t* pose;
 
   if (device == DEVICE_HEAD) {
     pose = &state.renderPoses[k_unTrackedDeviceIndex_Hmd];
   } else if (device == DEVICE_HAND_LEFT || device == DEVICE_HAND_RIGHT) {
-    state.input->GetPoseActionData(state.poseActions[device], state.compositor->GetTrackingSpace(), 0.f, &actionData, sizeof(actionData), 0);
-    pose = &actionData.pose;
+    state.input->GetPoseActionDataForNextFrame(state.poseActions[device], state.compositor->GetTrackingSpace(), &action, sizeof(action), 0);
+    pose = &action.pose;
   } else {
     return false;
   }
@@ -440,11 +394,11 @@ static bool openvr_isDown(Device device, DeviceButton button, bool* down, bool* 
     return false;
   }
 
-  InputDigitalActionData_t actionData;
-  state.input->GetDigitalActionData(state.buttonActions[device - DEVICE_HAND_LEFT][button], &actionData, sizeof(actionData), 0);
-  *down = actionData.bState;
-  *changed = actionData.bChanged;
-  return actionData.bActive;
+  InputDigitalActionData_t action;
+  state.input->GetDigitalActionData(state.buttonActions[device - DEVICE_HAND_LEFT][button], &action, sizeof(action), 0);
+  *down = action.bState;
+  *changed = action.bChanged;
+  return action.bActive;
 }
 
 static bool openvr_isTouched(Device device, DeviceButton button, bool* touched) {
@@ -452,52 +406,39 @@ static bool openvr_isTouched(Device device, DeviceButton button, bool* touched) 
     return false;
   }
 
-  InputDigitalActionData_t actionData;
-  state.input->GetDigitalActionData(state.touchActions[device - DEVICE_HAND_LEFT][button], &actionData, sizeof(actionData), 0);
-  *touched = actionData.bState;
-  return actionData.bActive;
+  InputDigitalActionData_t action;
+  state.input->GetDigitalActionData(state.touchActions[device - DEVICE_HAND_LEFT][button], &action, sizeof(action), 0);
+  *touched = action.bState;
+  return action.bActive;
 }
 
 static bool openvr_getAxis(Device device, DeviceAxis axis, vec3 value) {
-  if (device == DEVICE_HAND_LEFT || device == DEVICE_HAND_RIGHT) {
-    InputAnalogActionData_t actionData;
-    state.input->GetAnalogActionData(state.axisActions[device - DEVICE_HAND_LEFT][axis], &actionData, sizeof(actionData), 0);
-    vec3_set(value, actionData.x, actionData.y, actionData.z);
-    return actionData.bActive;
-  }
-
-  uint32_t finger;
-  VRActionHandle_t skeletonAction;
-  if (device >= DEVICE_HAND_LEFT_FINGER_THUMB && device <= DEVICE_HAND_LEFT_FINGER_PINKY) {
-    finger = device - DEVICE_HAND_LEFT_FINGER_THUMB;
-    skeletonAction = state.skeletonActions[0];
-  } else if (device >= DEVICE_HAND_RIGHT_FINGER_THUMB && device <= DEVICE_HAND_RIGHT_FINGER_PINKY) {
-    finger = device - DEVICE_HAND_RIGHT_FINGER_THUMB;
-    skeletonAction = state.skeletonActions[1];
-  } else {
-    return false;
-  }
-
-  VRSkeletalSummaryData_t summary;
-  if (state.input->GetSkeletalSummaryData(skeletonAction, &summary)) {
-    return false;
-  }
-
-  if (axis == AXIS_CURL) {
-    value[0] = summary.flFingerCurl[finger];
-    return true;
-  } else if (axis == AXIS_SPLAY && finger < 4) {
-    value[0] = summary.flFingerSplay[finger];
-    return true;
-  }
-
-  return false;
-}
-
-static bool openvr_getSkeleton(Device device, float* poses, uint32_t* poseCount) {
   if (device != DEVICE_HAND_LEFT && device != DEVICE_HAND_RIGHT) {
     return false;
   }
+
+  InputAnalogActionData_t action;
+  state.input->GetAnalogActionData(state.axisActions[device - DEVICE_HAND_LEFT][axis], &action, sizeof(action), 0);
+  vec3_set(value, action.x, action.y, action.z);
+  return action.bActive;
+}
+
+static bool openvr_getSkeleton(Device device, float* poses) {
+  if (device != DEVICE_HAND_LEFT && device != DEVICE_HAND_RIGHT) {
+    return false;
+  }
+
+  // Bone transforms are relative to the hand instead of the origin, so get the hand pose first
+  InputPoseActionData_t handPose;
+  state.input->GetPoseActionDataForNextFrame(state.poseActions[device], state.compositor->GetTrackingSpace(), &handPose, sizeof(handPose), 0);
+  if (!handPose.pose.bPoseIsValid) {
+    return false;
+  }
+  float transform[16], position[4], orientation[4];
+  mat4_fromMat34(transform, handPose.pose.mDeviceToAbsoluteTracking.m);
+  transform[13] += state.offset;
+  mat4_getPosition(transform, position);
+  mat4_getOrientation(transform, orientation);
 
   InputSkeletalActionData_t info;
   VRActionHandle_t action = state.skeletonActions[device - DEVICE_HAND_LEFT];
@@ -506,31 +447,43 @@ static bool openvr_getSkeleton(Device device, float* poses, uint32_t* poseCount)
     return false;
   }
 
+  VRBoneTransform_t bones[32];
+
   uint32_t boneCount;
   error = state.input->GetBoneCount(action, &boneCount);
-  if (error || boneCount > MAX_HEADSET_BONES || boneCount > *poseCount) {
+  if (error || boneCount > sizeof(bones) / sizeof(bones[0])) {
     return false;
   }
 
-  VRBoneTransform_t bones[MAX_HEADSET_BONES];
-  EVRSkeletalTransformSpace space = EVRSkeletalTransformSpace_VRSkeletalTransformSpace_Parent;
+  EVRSkeletalTransformSpace space = EVRSkeletalTransformSpace_VRSkeletalTransformSpace_Model;
   EVRSkeletalMotionRange motionRange = EVRSkeletalMotionRange_VRSkeletalMotionRange_WithController;
   error = state.input->GetSkeletalBoneData(action, space, motionRange, bones, boneCount);
   if (error) {
+    printf("No bone data %d\n", error);
     return false;
   }
 
-  float* p = poses;
-  for (uint32_t i = 0; i < boneCount; i++) {
-    memcpy(p, bones[i].position.v, 4 * sizeof(float));
-    p[4] = bones[i].orientation.x;
-    p[5] = bones[i].orientation.y;
-    p[6] = bones[i].orientation.z;
-    p[7] = bones[i].orientation.w;
-    p += 8;
+  // Copy SteamVR bone transform to output (indices match up)
+  // Swap x/w (HmdQuaternionf_t has w first)
+  // Premultiply by hand pose
+  float* pose = poses;
+
+  // SteamVR has a root joint instead of a palm joint, we zero out the root joint so it is the same
+  // as the regular hand pose
+  memset(&bones[0], 0, sizeof(bones[0]));
+  bones[0].orientation.w = 1.f;
+
+  for (uint32_t i = 1; i < HAND_JOINT_COUNT; i++) {
+    memcpy(pose, &bones[i].position, 8 * sizeof(float));
+    float w = pose[4];
+    pose[4] = pose[7];
+    pose[7] = w;
+    quat_rotate(orientation, pose);
+    vec3_add(pose, position);
+    quat_mul(pose + 4, orientation, pose + 4);
+    pose += 8;
   }
 
-  *poseCount = boneCount;
   return true;
 }
 
@@ -545,118 +498,274 @@ static bool openvr_vibrate(Device device, float strength, float duration, float 
   return true;
 }
 
-static ModelData* openvr_newModelData(Device device) {
+static bool loadRenderModel(char* name, RenderModel_t** model, RenderModel_TextureMap_t** texture) {
+  loadModel:
+  switch (state.renderModels->LoadRenderModel_Async(name, model)) {
+    case EVRRenderModelError_VRRenderModelError_Loading: lovrPlatformSleep(.001); goto loadModel;
+    case EVRRenderModelError_VRRenderModelError_None: break;
+    default: return false;
+  }
+
+  loadTexture:
+  switch (state.renderModels->LoadTexture_Async((*model)->diffuseTextureId, texture)) {
+    case EVRRenderModelError_VRRenderModelError_Loading: lovrPlatformSleep(.001); goto loadTexture;
+    case EVRRenderModelError_VRRenderModelError_None: break;
+    default: state.renderModels->FreeRenderModel(*model); return false;
+  }
+
+  return true;
+}
+
+static ModelData* openvr_newModelData(Device device, bool animated) {
   TrackedDeviceIndex_t index = getDeviceIndex(device);
-  if (index == INVALID_DEVICE) return false;
+  if (index == INVALID_DEVICE) return NULL;
+
+  RenderModel_t* renderModel = NULL;
+  RenderModel_TextureMap_t* renderModelTexture = NULL;
+  RenderModel_t** renderModels = NULL;
+  RenderModel_TextureMap_t** renderModelTextures = NULL;
+  uint32_t modelCount = 0;
 
   char renderModelName[1024];
   ETrackedDeviceProperty renderModelNameProperty = ETrackedDeviceProperty_Prop_RenderModelName_String;
   state.system->GetStringTrackedDeviceProperty(index, renderModelNameProperty, renderModelName, 1024, NULL);
 
-  if (!state.deviceModels[index]) {
-    while (state.renderModels->LoadRenderModel_Async(renderModelName, &state.deviceModels[index]) == EVRRenderModelError_VRRenderModelError_Loading) {
-      lovrPlatformSleep(.001);
+  char* names = NULL;
+  size_t namesSize = 0;
+  uint32_t charCount = 0;
+
+  if (!animated) {
+    modelCount = 1;
+    renderModels = &renderModel;
+    renderModelTextures = &renderModelTexture;
+    if (!loadRenderModel(renderModelName, &renderModel, &renderModelTexture)) {
+      return NULL;
+    }
+  } else {
+    uint32_t componentCount = state.renderModels->GetComponentCount(renderModelName);
+    renderModels = malloc(componentCount * sizeof(*renderModels));
+    renderModelTextures = malloc(componentCount * sizeof(*renderModelTextures));
+    lovrAssert(renderModels && renderModelTextures, "Out of memory");
+    for (uint32_t i = 0; i < componentCount; i++) {
+      if (namesSize < charCount + 256) {
+        namesSize += 256;
+        names = realloc(names, namesSize);
+        lovrAssert(names, "Out of memory");
+      }
+
+      char componentModel[1024];
+      uint32_t size = state.renderModels->GetComponentName(renderModelName, i, names + charCount, 256);
+      if (!state.renderModels->GetComponentRenderModelName(renderModelName, names + charCount, componentModel, sizeof(componentModel))) {
+        continue;
+      }
+
+      // Sadly this loads the components serially...
+      if (!loadRenderModel(componentModel, &renderModels[modelCount], &renderModelTextures[modelCount])) {
+        for (uint32_t j = 0; modelCount > 0 && j < modelCount; j++) {
+          state.renderModels->FreeRenderModel(renderModels[j]);
+          state.renderModels->FreeTexture(renderModelTextures[j]);
+        }
+        free(renderModels);
+        free(renderModelTextures);
+        return NULL;
+      }
+
+      charCount += size;
+      modelCount++;
     }
   }
 
-  if (!state.deviceTextures[index]) {
-    while (state.renderModels->LoadTexture_Async(state.deviceModels[index]->diffuseTextureId, &state.deviceTextures[index]) == EVRRenderModelError_VRRenderModelError_Loading) {
-      lovrPlatformSleep(.001);
-    }
-  }
-
-  RenderModel_t* vrModel = state.deviceModels[index];
   ModelData* model = lovrAlloc(ModelData);
-  size_t vertexSize = sizeof(RenderModel_Vertex_t);
+  model->blobCount = 2;
+  model->nodeCount = animated ? (1 + modelCount) : 1;
+  model->bufferCount = 2 * modelCount;
+  model->attributeCount = 4 * modelCount;
+  model->textureCount = modelCount;
+  model->materialCount = modelCount;
+  model->primitiveCount = modelCount;
+  model->childCount = animated ? modelCount : 0;
+  model->charCount = charCount;
 
-  model->bufferCount = 2;
-  model->attributeCount = 4;
-  model->textureCount = 1;
-  model->materialCount = 1;
-  model->primitiveCount = 1;
-  model->nodeCount = 1;
   lovrModelDataAllocate(model);
 
-  model->buffers[0] = (ModelBuffer) {
-    .data = (char*) vrModel->rVertexData,
-    .size = vrModel->unVertexCount * vertexSize,
-    .stride = vertexSize
-  };
+  memcpy(model->chars, names, charCount);
+  free(names);
 
-  model->buffers[1] = (ModelBuffer) {
-    .data = (char*) vrModel->rIndexData,
-    .size = vrModel->unTriangleCount * 3 * sizeof(uint16_t),
-    .stride = sizeof(uint16_t)
-  };
+  uint32_t totalVertexCount = 0;
+  uint32_t totalIndexCount = 0;
 
-  model->attributes[0] = (ModelAttribute) {
-    .buffer = 0,
-    .offset = offsetof(RenderModel_Vertex_t, vPosition),
-    .count = vrModel->unVertexCount,
-    .type = F32,
-    .components = 3
-  };
+  for (uint32_t i = 0; i < modelCount; i++) {
+    lovrAssert(renderModels[i]->unTriangleCount > 0, "Unsupported OpenVR model: no index buffer (please report this)");
+    totalVertexCount += renderModels[i]->unVertexCount;
+    totalIndexCount += renderModels[i]->unTriangleCount * 3;
+  }
 
-  model->attributes[1] = (ModelAttribute) {
-    .buffer = 0,
-    .offset = offsetof(RenderModel_Vertex_t, vNormal),
-    .count = vrModel->unVertexCount,
-    .type = F32,
-    .components = 3
-  };
+  size_t vertexSize = sizeof(RenderModel_Vertex_t);
+  float* vertices = malloc(totalVertexCount * vertexSize);
+  uint16_t* indices = malloc(totalIndexCount * sizeof(uint16_t));
+  lovrAssert(vertices && indices, "Out of memory");
 
-  model->attributes[2] = (ModelAttribute) {
-    .buffer = 0,
-    .offset = offsetof(RenderModel_Vertex_t, rfTextureCoord),
-    .count = vrModel->unVertexCount,
-    .type = F32,
-    .components = 2
-  };
+  model->blobs[0] = lovrBlobCreate(vertices, totalVertexCount * vertexSize, "OpenVR Model Vertices");
+  model->blobs[1] = lovrBlobCreate(indices, totalIndexCount * sizeof(uint16_t), "OpenVR Model Indices");
 
-  model->attributes[3] = (ModelAttribute) {
-    .buffer = 1,
-    .offset = 0,
-    .count = vrModel->unTriangleCount * 3,
-    .type = U16,
-    .components = 1
-  };
+  char* name = model->chars;
 
-  RenderModel_TextureMap_t* vrTexture = state.deviceTextures[index];
-  model->textures[0] = lovrTextureDataCreate(vrTexture->unWidth, vrTexture->unHeight, NULL, 0, FORMAT_RGBA);
-  memcpy(model->textures[0]->blob->data, vrTexture->rubTextureMapData, vrTexture->unWidth * vrTexture->unHeight * 4);
+  for (uint32_t i = 0; i < modelCount; i++) {
+    uint32_t vertexCount = renderModels[i]->unVertexCount;
+    uint32_t indexCount = renderModels[i]->unTriangleCount * 3;
 
-  model->materials[0] = (ModelMaterial) {
-    .colors[COLOR_DIFFUSE] = { 1.f, 1.f, 1.f, 1.f },
-    .textures[TEXTURE_DIFFUSE] = 0,
-    .filters[TEXTURE_DIFFUSE] = lovrGraphicsGetDefaultFilter()
-  };
+    memcpy(vertices, renderModels[i]->rVertexData, vertexCount * vertexSize);
+    memcpy(indices, renderModels[i]->rIndexData, indexCount * sizeof(uint16_t));
 
-  model->primitives[0] = (ModelPrimitive) {
-    .mode = DRAW_TRIANGLES,
-    .attributes = {
-      [ATTR_POSITION] = &model->attributes[0],
-      [ATTR_NORMAL] = &model->attributes[1],
-      [ATTR_TEXCOORD] = &model->attributes[2]
-    },
-    .indices = &model->attributes[3],
-    .material = 0
-  };
+    model->buffers[2 * i + 0] = (ModelBuffer) { .data = (char*) vertices, .size = vertexCount * vertexSize, .stride = vertexSize };
+    model->buffers[2 * i + 1] = (ModelBuffer) { .data = (char*) indices, .size = indexCount * sizeof(uint16_t), .stride = sizeof(uint16_t) };
 
-  model->nodes[0] = (ModelNode) {
-    .transform.matrix = MAT4_IDENTITY,
-    .primitiveIndex = 0,
-    .primitiveCount = 1,
-    .skin = ~0u,
-    .matrix = true
-  };
+    vertices += vertexCount * vertexSize / sizeof(float);
+    indices += indexCount;
+
+    model->attributes[4 * i + 0] = (ModelAttribute) {
+      .buffer = 2 * i,
+      .offset = offsetof(RenderModel_Vertex_t, vPosition),
+      .count = vertexCount,
+      .type = F32,
+      .components = 3
+    };
+
+    model->attributes[4 * i + 1] = (ModelAttribute) {
+      .buffer = 2 * i,
+      .offset = offsetof(RenderModel_Vertex_t, vNormal),
+      .count = vertexCount,
+      .type = F32,
+      .components = 3
+    };
+
+    model->attributes[4 * i + 2] = (ModelAttribute) {
+      .buffer = 2 * i,
+      .offset = offsetof(RenderModel_Vertex_t, rfTextureCoord),
+      .count = vertexCount,
+      .type = F32,
+      .components = 2
+    };
+
+    model->attributes[4 * i + 3] = (ModelAttribute) {
+      .buffer = 2 * i + 1,
+      .offset = 0,
+      .count = indexCount,
+      .type = U16,
+      .components = 1
+    };
+
+    RenderModel_TextureMap_t* texture = renderModelTextures[i];
+    model->textures[i] = lovrTextureDataCreate(texture->unWidth, texture->unHeight, NULL, 0, FORMAT_RGBA);
+    memcpy(model->textures[i]->blob->data, texture->rubTextureMapData, texture->unWidth * texture->unHeight * 4);
+
+    model->materials[i] = (ModelMaterial) {
+      .colors[COLOR_DIFFUSE] = { 1.f, 1.f, 1.f, 1.f },
+      .textures[TEXTURE_DIFFUSE] = i,
+      .filters[TEXTURE_DIFFUSE] = lovrGraphicsGetDefaultFilter()
+    };
+
+    model->primitives[i] = (ModelPrimitive) {
+      .mode = DRAW_TRIANGLES,
+      .attributes = {
+        [ATTR_POSITION] = &model->attributes[4 * i + 0],
+        [ATTR_NORMAL] = &model->attributes[4 * i + 1],
+        [ATTR_TEXCOORD] = &model->attributes[4 * i + 2]
+      },
+      .indices = &model->attributes[4 * i + 3],
+      .material = i
+    };
+
+    model->nodes[i] = (ModelNode) {
+      .name = name,
+      .transform.matrix = MAT4_IDENTITY,
+      .primitiveIndex = i,
+      .primitiveCount = 1,
+      .skin = ~0u,
+      .matrix = true
+    };
+
+    name = strchr(name, '\0') + 1;
+  }
+
+  for (uint32_t i = 0; i < modelCount; i++) {
+    state.renderModels->FreeRenderModel(renderModels[i]);
+    state.renderModels->FreeTexture(renderModelTextures[i]);
+  }
+
+  // Root node
+  if (animated) {
+    for (uint32_t i = 0; i < modelCount; i++) {
+      model->children[i] = i;
+    }
+
+    model->rootNode = modelCount;
+
+    model->nodes[model->rootNode] = (ModelNode) {
+      .transform.matrix = MAT4_IDENTITY,
+      .matrix = true,
+      .childCount = modelCount,
+      .children = model->children,
+      .skin = ~0u
+    };
+
+    free(renderModels);
+    free(renderModelTextures);
+  }
 
   return model;
+}
+
+static bool openvr_animate(Device device, Model* model) {
+  if (device != DEVICE_HAND_LEFT && device != DEVICE_HAND_RIGHT) {
+    return false;
+  }
+
+  TrackedDeviceIndex_t index = getDeviceIndex(device);
+  if (index == INVALID_DEVICE) {
+    return false;
+  }
+
+  char renderModelName[1024];
+  ETrackedDeviceProperty renderModelNameProperty = ETrackedDeviceProperty_Prop_RenderModelName_String;
+  state.system->GetStringTrackedDeviceProperty(index, renderModelNameProperty, renderModelName, 1024, NULL);
+
+  bool success = false;
+  ModelData* modelData = lovrModelGetModelData(model);
+  VRInputValueHandle_t inputSource = state.inputSources[device];
+  for (uint32_t i = 0; i < modelData->nodeCount; i++) {
+    ModelNode* node = &modelData->nodes[i];
+
+    if (!node->name || !state.renderModels->RenderModelHasComponent(renderModelName, (char*) node->name)) {
+      continue;
+    }
+
+    RenderModel_ComponentState_t componentState;
+    if (!state.renderModels->GetComponentStateForDevicePath(renderModelName, (char*) node->name, inputSource, NULL, &componentState)) {
+      continue;
+    }
+
+    float transform[16], position[4], orientation[4];
+    mat4_fromMat34(transform, componentState.mTrackingToComponentRenderModel.m);
+    mat4_getPosition(transform, position);
+    mat4_getOrientation(transform, orientation);
+    if (!(componentState.uProperties & EVRComponentProperty_VRComponentProperty_IsVisible)) {
+      vec3_set(position, 1e10, 1e10, 1e10); // Hide the node somehow (FIXME)
+    }
+
+    lovrModelPose(model, i, position, orientation, 1.f);
+    success = true;
+  }
+
+  return success;
 }
 
 static void openvr_renderTo(void (*callback)(void*), void* userdata) {
   if (!state.canvas) {
     uint32_t width, height;
     openvr_getDisplayDimensions(&width, &height);
+    width *= state.supersample;
+    height *= state.supersample;
     CanvasFlags flags = { .depth = { true, false, FORMAT_D24S8 }, .stereo = true, .mipmaps = true, .msaa = state.msaa };
     state.canvas = lovrCanvasCreate(width, height, flags);
     Texture* texture = lovrTextureCreate(TEXTURE_2D, NULL, 0, true, true, state.msaa);
@@ -667,23 +776,23 @@ static void openvr_renderTo(void (*callback)(void*), void* userdata) {
     lovrPlatformSetSwapInterval(0);
   }
 
-  Camera camera = { .canvas = state.canvas };
-
   float head[16];
   mat4_fromMat34(head, state.renderPoses[k_unTrackedDeviceIndex_Hmd].mDeviceToAbsoluteTracking.m);
 
   for (int i = 0; i < 2; i++) {
-    float eye[16];
+    float matrix[16], eye[16];
     EVREye vrEye = (i == 0) ? EVREye_Eye_Left : EVREye_Eye_Right;
-    mat4_fromMat44(camera.projection[i], state.system->GetProjectionMatrix(vrEye, state.clipNear, state.clipFar).m);
-    mat4_init(camera.viewMatrix[i], head);
-    mat4_multiply(camera.viewMatrix[i], mat4_fromMat34(eye, state.system->GetEyeToHeadTransform(vrEye).m));
-    mat4_invert(camera.viewMatrix[i]);
+    mat4_init(matrix, head);
+    mat4_multiply(matrix, mat4_fromMat34(eye, state.system->GetEyeToHeadTransform(vrEye).m));
+    mat4_invert(matrix);
+    lovrGraphicsSetViewMatrix(i, matrix);
+    mat4_fromMat44(matrix, state.system->GetProjectionMatrix(vrEye, state.clipNear, state.clipFar).m);
+    lovrGraphicsSetProjection(i, matrix);
   }
 
-  lovrGraphicsSetCamera(&camera, true);
+  lovrGraphicsSetBackbuffer(state.canvas, true, true);
   callback(userdata);
-  lovrGraphicsSetCamera(NULL, false);
+  lovrGraphicsSetBackbuffer(NULL, false, false);
 
   // Submit
   const Attachment* attachments = lovrCanvasGetAttachments(state.canvas, NULL);
@@ -749,6 +858,7 @@ HeadsetInterface lovrHeadsetOpenVRDriver = {
   .getSkeleton = openvr_getSkeleton,
   .vibrate = openvr_vibrate,
   .newModelData = openvr_newModelData,
+  .animate = openvr_animate,
   .renderTo = openvr_renderTo,
   .getMirrorTexture = openvr_getMirrorTexture,
   .update = openvr_update

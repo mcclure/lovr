@@ -32,7 +32,6 @@ static struct {
   float clipFar;
   float pitch;
   float yaw;
-  float fov;
 
   bool kbamBlocked;
 } state;
@@ -43,16 +42,15 @@ bool lovrHeadsetGetFakeKbamBlocked() {
 void lovrHeadsetFakeKbamBlock(bool block, bool silent) {
   if (block != state.kbamBlocked) {
     if (!silent)
-      lovrLog("%s fake headset keyboard/mouse controls\n", block?"Disabling":"Re-enabling");
+      lovrLog(LOG_INFO, "%s fake headset keyboard/mouse controls\n", block?"Disabling":"Re-enabling");
     state.kbamBlocked = block;
   }
 }
 
-static bool desktop_init(float offset, uint32_t msaa) {
+static bool desktop_init(float supersample, float offset, uint32_t msaa) {
   state.offset = offset;
   state.clipNear = .1f;
   state.clipFar = 100.f;
-  state.fov = 67.f * (float) M_PI / 180.f;
 
   if (!state.initialized) {
     mat4_identity(state.headTransform);
@@ -102,20 +100,20 @@ static uint32_t desktop_getViewCount(void) {
 static bool desktop_getViewPose(uint32_t view, float* position, float* orientation) {
   vec3_init(position, state.position);
   quat_fromMat4(orientation, state.headTransform);
+  position[1] += state.offset;
   return view < 2;
 }
 
 static bool desktop_getViewAngles(uint32_t view, float* left, float* right, float* up, float* down) {
-  *left = -state.fov * .5f;
-  *right = state.fov * .5f;
-  float aspect;
+  float aspect, fov;
   uint32_t width, height;
   desktop_getDisplayDimensions(&width, &height);
-  aspect = (float) width / 2.f / height;
-  *left = -state.fov * aspect * .5f;
-  *right = state.fov * aspect * .5f;
-  *up = state.fov * .5f;
-  *down = -state.fov * .5f;
+  aspect = (float) width / height;
+  fov = 67.f * (float) M_PI / 180.f * .5f;
+  *left = fov * aspect / 2;
+  *right = fov * aspect / 2;
+  *up = fov / 2;
+  *down = fov / 2;
   return view < 2;
 }
 
@@ -186,30 +184,37 @@ static bool desktop_getAxis(Device device, DeviceAxis axis, vec3 value) {
   return false;
 }
 
+static bool desktop_getSkeleton(Device device, float* poses) {
+  return false;
+}
+
 static bool desktop_vibrate(Device device, float strength, float duration, float frequency) {
   return false;
 }
 
-static ModelData* desktop_newModelData(Device device) {
+static ModelData* desktop_newModelData(Device device, bool animated) {
   return NULL;
 }
 
+static bool desktop_animate(Device device, struct Model* model) {
+  return false;
+}
+
 static void desktop_renderTo(void (*callback)(void*), void* userdata) {
-  bool stereo = false;
-  uint32_t width, height;
-  desktop_getDisplayDimensions(&width, &height);
-  float aspect = (float) width / (float) height / (1 + stereo);
-  float left, right, up, down;
+  float projection[16], left, right, up, down;
   desktop_getViewAngles(0, &left, &right, &up, &down);
-  Camera camera = { .canvas = NULL, .viewMatrix = { MAT4_IDENTITY }, .stereo = stereo };
-  mat4_fov(camera.projection[0], tanf(left) * aspect, tanf(right) * aspect, tanf(up), tanf(down), state.clipNear, state.clipFar);
-  mat4_multiply(camera.viewMatrix[0], state.headTransform);
-  mat4_invert(camera.viewMatrix[0]);
-  mat4_set(camera.projection[1], camera.projection[0]);
-  mat4_set(camera.viewMatrix[1], camera.viewMatrix[0]);
-  lovrGraphicsSetCamera(&camera, true);
+  mat4_fov(projection, left, right, up, down, state.clipNear, state.clipFar);
+
+  float viewMatrix[16];
+  mat4_invert(mat4_init(viewMatrix, state.headTransform));
+
+  lovrGraphicsSetProjection(0, projection);
+  lovrGraphicsSetProjection(1, projection);
+  lovrGraphicsSetViewMatrix(0, viewMatrix);
+  lovrGraphicsSetViewMatrix(1, viewMatrix);
+  lovrGraphicsSetBackbuffer(NULL, false, true);
   callback(userdata);
-  lovrGraphicsSetCamera(NULL, false);
+  lovrGraphicsSetBackbuffer(NULL, false, false);
 }
 
 static void desktop_update(float dt) {
@@ -323,8 +328,10 @@ HeadsetInterface lovrHeadsetDesktopDriver = {
   .isDown = desktop_isDown,
   .isTouched = desktop_isTouched,
   .getAxis = desktop_getAxis,
+  .getSkeleton = desktop_getSkeleton,
   .vibrate = desktop_vibrate,
   .newModelData = desktop_newModelData,
+  .animate = desktop_animate,
   .renderTo = desktop_renderTo,
   .update = desktop_update
 };

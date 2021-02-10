@@ -2,15 +2,16 @@
 #include "physics/physics.h"
 #include "core/ref.h"
 
-StringEntry ShapeTypes[] = {
+StringEntry lovrShapeType[] = {
   [SHAPE_SPHERE] = ENTRY("sphere"),
   [SHAPE_BOX] = ENTRY("box"),
   [SHAPE_CAPSULE] = ENTRY("capsule"),
   [SHAPE_CYLINDER] = ENTRY("cylinder"),
+  [SHAPE_MESH] = ENTRY("mesh"),
   { 0 }
 };
 
-StringEntry JointTypes[] = {
+StringEntry lovrJointType[] = {
   [JOINT_BALL] = ENTRY("ball"),
   [JOINT_DISTANCE] = ENTRY("distance"),
   [JOINT_HINGE] = ENTRY("hinge"),
@@ -142,7 +143,7 @@ static const luaL_Reg lovrPhysics[] = {
 
 int luaopen_lovr_physics(lua_State* L) {
   lua_newtable(L);
-  luaL_register(L, NULL, lovrPhysics);
+  luax_register(L, lovrPhysics);
   luax_registertype(L, World);
   luax_registertype(L, Collider);
   luax_registertype(L, BallJoint);
@@ -153,6 +154,7 @@ int luaopen_lovr_physics(lua_State* L) {
   luax_registertype(L, BoxShape);
   luax_registertype(L, CapsuleShape);
   luax_registertype(L, CylinderShape);
+  luax_registertype(L, MeshShape);
   if (lovrPhysicsInit()) {
     luax_atexit(L, lovrPhysicsDestroy);
   }

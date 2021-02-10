@@ -6,19 +6,19 @@
 
 #pragma once
 
-#define MAX_HEADSET_BONES 32
+#define HAND_JOINT_COUNT 26
 
+struct Model;
 struct ModelData;
 struct Texture;
 
 typedef enum {
   DRIVER_DESKTOP,
-  DRIVER_LEAP_MOTION,
   DRIVER_OCULUS,
-  DRIVER_OCULUS_MOBILE,
   DRIVER_OPENVR,
   DRIVER_OPENXR,
-  DRIVER_WEBVR,
+  DRIVER_VRAPI,
+  DRIVER_PICO,
   DRIVER_WEBXR
 } HeadsetDriver;
 
@@ -35,16 +35,6 @@ typedef enum {
   DEVICE_HAND_RIGHT_POINT,
   DEVICE_EYE_LEFT,
   DEVICE_EYE_RIGHT,
-  DEVICE_HAND_LEFT_FINGER_THUMB,
-  DEVICE_HAND_LEFT_FINGER_INDEX,
-  DEVICE_HAND_LEFT_FINGER_MIDDLE,
-  DEVICE_HAND_LEFT_FINGER_RING,
-  DEVICE_HAND_LEFT_FINGER_PINKY,
-  DEVICE_HAND_RIGHT_FINGER_THUMB,
-  DEVICE_HAND_RIGHT_FINGER_INDEX,
-  DEVICE_HAND_RIGHT_FINGER_MIDDLE,
-  DEVICE_HAND_RIGHT_FINGER_RING,
-  DEVICE_HAND_RIGHT_FINGER_PINKY,
   DEVICE_BEACON_1,
   DEVICE_BEACON_2,
   DEVICE_BEACON_3,
@@ -71,11 +61,37 @@ typedef enum {
   AXIS_THUMBSTICK,
   AXIS_TOUCHPAD,
   AXIS_GRIP,
-  AXIS_CURL,
-  AXIS_SPLAY,
-  AXIS_PINCH,
   MAX_AXES
 } DeviceAxis;
+
+typedef enum {
+  JOINT_PALM,
+  JOINT_WRIST,
+  JOINT_THUMB_METACARPAL,
+  JOINT_THUMB_PROXIMAL,
+  JOINT_THUMB_DISTAL,
+  JOINT_THUMB_TIP,
+  JOINT_INDEX_METACARPAL,
+  JOINT_INDEX_PROXIMAL,
+  JOINT_INDEX_INTERMEDIATE,
+  JOINT_INDEX_DISTAL,
+  JOINT_INDEX_TIP,
+  JOINT_MIDDLE_METACARPAL,
+  JOINT_MIDDLE_PROXIMAL,
+  JOINT_MIDDLE_INTERMEDIATE,
+  JOINT_MIDDLE_DISTAL,
+  JOINT_MIDDLE_TIP,
+  JOINT_RING_METACARPAL,
+  JOINT_RING_PROXIMAL,
+  JOINT_RING_INTERMEDIATE,
+  JOINT_RING_DISTAL,
+  JOINT_RING_TIP,
+  JOINT_PINKY_METACARPAL,
+  JOINT_PINKY_PROXIMAL,
+  JOINT_PINKY_INTERMEDIATE,
+  JOINT_PINKY_DISTAL,
+  JOINT_PINKY_TIP
+} HandJoint;
 
 // Notes:
 // - getDisplayFrequency may return 0.f if the information is unavailable.
@@ -86,7 +102,7 @@ typedef enum {
 typedef struct HeadsetInterface {
   struct HeadsetInterface* next;
   HeadsetDriver driverType;
-  bool (*init)(float offset, uint32_t msaa);
+  bool (*init)(float supersample, float offset, uint32_t msaa);
   void (*destroy)(void);
   bool (*getName)(char* name, size_t length);
   HeadsetOrigin (*getOriginType)(void);
@@ -106,9 +122,10 @@ typedef struct HeadsetInterface {
   bool (*isDown)(Device device, DeviceButton button, bool* down, bool* changed);
   bool (*isTouched)(Device device, DeviceButton button, bool* touched);
   bool (*getAxis)(Device device, DeviceAxis axis, float* value);
-  bool (*getSkeleton)(Device device, float* poses, uint32_t* poseCount);
+  bool (*getSkeleton)(Device device, float* poses);
   bool (*vibrate)(Device device, float strength, float duration, float frequency);
-  struct ModelData* (*newModelData)(Device device);
+  struct ModelData* (*newModelData)(Device device, bool animated);
+  bool (*animate)(Device device, struct Model* model);
   void (*renderTo)(void (*callback)(void*), void* userdata);
   struct Texture* (*getMirrorTexture)(void);
   void (*update)(float dt);
@@ -118,20 +135,19 @@ typedef struct HeadsetInterface {
 extern HeadsetInterface lovrHeadsetOculusDriver;
 extern HeadsetInterface lovrHeadsetOpenVRDriver;
 extern HeadsetInterface lovrHeadsetOpenXRDriver;
-extern HeadsetInterface lovrHeadsetWebVRDriver;
+extern HeadsetInterface lovrHeadsetVrApiDriver;
+extern HeadsetInterface lovrHeadsetPicoDriver;
 extern HeadsetInterface lovrHeadsetWebXRDriver;
 extern HeadsetInterface lovrHeadsetDesktopDriver;
-extern HeadsetInterface lovrHeadsetOculusMobileDriver;
-extern HeadsetInterface lovrHeadsetLeapMotionDriver;
 
 // Active drivers
-extern HeadsetInterface* lovrHeadsetDriver;
+extern HeadsetInterface* lovrHeadsetDisplayDriver;
 extern HeadsetInterface* lovrHeadsetTrackingDrivers;
 
 #define FOREACH_TRACKING_DRIVER(i)\
   for (HeadsetInterface* i = lovrHeadsetTrackingDrivers; i != NULL; i = i->next)
 
-bool lovrHeadsetInit(HeadsetDriver* drivers, size_t count, float offset, uint32_t msaa);
+bool lovrHeadsetInit(HeadsetDriver* drivers, size_t count, float supersample, float offset, uint32_t msaa);
 void lovrHeadsetDestroy(void);
 
 LOVR_EXPORT bool lovrHeadsetGetFakeKbamBlocked();

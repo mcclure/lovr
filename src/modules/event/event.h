@@ -12,6 +12,9 @@ typedef enum {
   EVENT_RESTART,
   EVENT_FOCUS,
   EVENT_RESIZE,
+  EVENT_KEYPRESSED,
+  EVENT_KEYRELEASED,
+  EVENT_TEXTINPUT,
   EVENT_CUSTOM,
 #ifdef LOVR_ENABLE_THREAD
   EVENT_THREAD_ERROR,
@@ -56,6 +59,17 @@ typedef struct {
 } ResizeEvent;
 
 typedef struct {
+  uint32_t code;
+  uint32_t scancode;
+  bool repeat;
+} KeyEvent;
+
+typedef struct {
+  char utf8[4];
+  uint32_t codepoint;
+} TextEvent;
+
+typedef struct {
   struct Thread* thread;
   char* error;
 } ThreadEvent;
@@ -70,6 +84,8 @@ typedef union {
   QuitEvent quit;
   BoolEvent boolean;
   ResizeEvent resize;
+  KeyEvent key;
+  TextEvent text;
   ThreadEvent thread;
   CustomEvent custom;
 } EventData;

@@ -2,21 +2,36 @@
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+
 #ifndef EMSCRIPTEN
-#ifdef _WIN32
-#define GLFW_EXPOSE_NATIVE_WIN32
-#define GLFW_EXPOSE_NATIVE_WGL
-#endif
-#include <GLFW/glfw3native.h>
+#  ifdef _WIN32
+#    define GLFW_EXPOSE_NATIVE_WIN32
+#    define GLFW_EXPOSE_NATIVE_WGL
+#  endif
+#  ifdef _WIN32
+#    define GLFW_EXPOSE_NATIVE_WIN32
+#    define GLFW_EXPOSE_NATIVE_WGL
+#  endif
+#  ifdef LOVR_LINUX_EGL
+#    define EGL_NO_X11
+#    include <EGL/egl.h>
+#    define GLFW_EXPOSE_NATIVE_EGL
+#  endif
+#  ifdef LOVR_LINUX_X11
+#    define GLFW_EXPOSE_NATIVE_X11
+#    define GLFW_EXPOSE_NATIVE_GLX
+#  endif
+#  include <GLFW/glfw3native.h>
 #endif
 
 static struct {
   GLFWwindow* window;
-  windowCloseCallback onWindowClose;
+  quitCallback onQuitRequest;
   windowFocusCallback onWindowFocus;
   windowResizeCallback onWindowResize;
   mouseButtonCallback onMouseButton;
   keyboardCallback onKeyboardEvent;
+  textCallback onTextEvent;
 } glfwState;
 
 static void onError(int code, const char* description) {
@@ -24,8 +39,8 @@ static void onError(int code, const char* description) {
 }
 
 static void onWindowClose(GLFWwindow* window) {
-  if (glfwState.onWindowClose) {
-    glfwState.onWindowClose();
+  if (glfwState.onQuitRequest) {
+    glfwState.onQuitRequest();
   }
 }
 
@@ -52,24 +67,109 @@ static void onMouseButton(GLFWwindow* window, int b, int a, int mods) {
 
 static void onKeyboardEvent(GLFWwindow* window, int k, int scancode, int a, int mods) {
   if (glfwState.onKeyboardEvent) {
-    KeyCode key;
+    KeyboardKey key;
     switch (k) {
-      case GLFW_KEY_W: key = KEY_W; break;
       case GLFW_KEY_A: key = KEY_A; break;
-      case GLFW_KEY_S: key = KEY_S; break;
+      case GLFW_KEY_B: key = KEY_B; break;
+      case GLFW_KEY_C: key = KEY_C; break;
       case GLFW_KEY_D: key = KEY_D; break;
-      case GLFW_KEY_Q: key = KEY_Q; break;
       case GLFW_KEY_E: key = KEY_E; break;
+      case GLFW_KEY_F: key = KEY_F; break;
+      case GLFW_KEY_G: key = KEY_G; break;
+      case GLFW_KEY_H: key = KEY_H; break;
+      case GLFW_KEY_I: key = KEY_I; break;
+      case GLFW_KEY_J: key = KEY_J; break;
+      case GLFW_KEY_K: key = KEY_K; break;
+      case GLFW_KEY_L: key = KEY_L; break;
+      case GLFW_KEY_M: key = KEY_M; break;
+      case GLFW_KEY_N: key = KEY_N; break;
+      case GLFW_KEY_O: key = KEY_O; break;
+      case GLFW_KEY_P: key = KEY_P; break;
+      case GLFW_KEY_Q: key = KEY_Q; break;
+      case GLFW_KEY_R: key = KEY_R; break;
+      case GLFW_KEY_S: key = KEY_S; break;
+      case GLFW_KEY_T: key = KEY_T; break;
+      case GLFW_KEY_U: key = KEY_U; break;
+      case GLFW_KEY_V: key = KEY_V; break;
+      case GLFW_KEY_W: key = KEY_W; break;
+      case GLFW_KEY_X: key = KEY_X; break;
+      case GLFW_KEY_Y: key = KEY_Y; break;
+      case GLFW_KEY_Z: key = KEY_Z; break;
+      case GLFW_KEY_0: key = KEY_0; break;
+      case GLFW_KEY_1: key = KEY_1; break;
+      case GLFW_KEY_2: key = KEY_2; break;
+      case GLFW_KEY_3: key = KEY_3; break;
+      case GLFW_KEY_4: key = KEY_4; break;
+      case GLFW_KEY_5: key = KEY_5; break;
+      case GLFW_KEY_6: key = KEY_6; break;
+      case GLFW_KEY_7: key = KEY_7; break;
+      case GLFW_KEY_8: key = KEY_8; break;
+      case GLFW_KEY_9: key = KEY_9; break;
+
+      case GLFW_KEY_SPACE: key = KEY_SPACE; break;
+      case GLFW_KEY_ENTER: key = KEY_ENTER; break;
+      case GLFW_KEY_TAB: key = KEY_TAB; break;
+      case GLFW_KEY_ESCAPE: key = KEY_ESCAPE; break;
+      case GLFW_KEY_BACKSPACE: key = KEY_BACKSPACE; break;
       case GLFW_KEY_UP: key = KEY_UP; break;
       case GLFW_KEY_DOWN: key = KEY_DOWN; break;
       case GLFW_KEY_LEFT: key = KEY_LEFT; break;
       case GLFW_KEY_RIGHT: key = KEY_RIGHT; break;
-      case GLFW_KEY_ESCAPE: key = KEY_ESCAPE; break;
+      case GLFW_KEY_HOME: key = KEY_HOME; break;
+      case GLFW_KEY_END: key = KEY_END; break;
+      case GLFW_KEY_PAGE_UP: key = KEY_PAGE_UP; break;
+      case GLFW_KEY_PAGE_DOWN: key = KEY_PAGE_DOWN; break;
+      case GLFW_KEY_INSERT: key = KEY_INSERT; break;
+      case GLFW_KEY_DELETE: key = KEY_DELETE; break;
+      case GLFW_KEY_F1: key = KEY_F1; break;
+      case GLFW_KEY_F2: key = KEY_F2; break;
+      case GLFW_KEY_F3: key = KEY_F3; break;
+      case GLFW_KEY_F4: key = KEY_F4; break;
       case GLFW_KEY_F5: key = KEY_F5; break;
+      case GLFW_KEY_F6: key = KEY_F6; break;
+      case GLFW_KEY_F7: key = KEY_F7; break;
+      case GLFW_KEY_F8: key = KEY_F8; break;
+      case GLFW_KEY_F9: key = KEY_F9; break;
+      case GLFW_KEY_F10: key = KEY_F10; break;
+      case GLFW_KEY_F11: key = KEY_F11; break;
+      case GLFW_KEY_F12: key = KEY_F12; break;
+
+      case GLFW_KEY_GRAVE_ACCENT: key = KEY_BACKTICK; break;
+      case GLFW_KEY_MINUS: key = KEY_MINUS; break;
+      case GLFW_KEY_EQUAL: key = KEY_EQUALS; break;
+      case GLFW_KEY_LEFT_BRACKET: key = KEY_LEFT_BRACKET; break;
+      case GLFW_KEY_RIGHT_BRACKET: key = KEY_RIGHT_BRACKET; break;
+      case GLFW_KEY_BACKSLASH: key = KEY_BACKSLASH; break;
+      case GLFW_KEY_SEMICOLON: key = KEY_SEMICOLON; break;
+      case GLFW_KEY_APOSTROPHE: key = KEY_APOSTROPHE; break;
+      case GLFW_KEY_COMMA: key = KEY_COMMA; break;
+      case GLFW_KEY_PERIOD: key = KEY_PERIOD; break;
+      case GLFW_KEY_SLASH: key = KEY_SLASH; break;
+
+      case GLFW_KEY_LEFT_CONTROL: key = KEY_LEFT_CONTROL; break;
+      case GLFW_KEY_LEFT_SHIFT: key = KEY_LEFT_SHIFT; break;
+      case GLFW_KEY_LEFT_ALT: key = KEY_LEFT_ALT; break;
+      case GLFW_KEY_LEFT_SUPER: key = KEY_LEFT_OS; break;
+      case GLFW_KEY_RIGHT_CONTROL: key = KEY_RIGHT_CONTROL; break;
+      case GLFW_KEY_RIGHT_SHIFT: key = KEY_RIGHT_SHIFT; break;
+      case GLFW_KEY_RIGHT_ALT: key = KEY_RIGHT_ALT; break;
+      case GLFW_KEY_RIGHT_SUPER: key = KEY_RIGHT_OS; break;
+
+      case GLFW_KEY_CAPS_LOCK: key = KEY_CAPS_LOCK; break;
+      case GLFW_KEY_SCROLL_LOCK: key = KEY_SCROLL_LOCK; break;
+      case GLFW_KEY_NUM_LOCK: key = KEY_NUM_LOCK; break;
+
       default: return;
     }
-    ButtonAction action = (a == GLFW_PRESS) ? BUTTON_PRESSED : BUTTON_RELEASED;
-    glfwState.onKeyboardEvent(key, action);
+    ButtonAction action = (a == GLFW_RELEASE) ? BUTTON_RELEASED : BUTTON_PRESSED;
+    bool repeat = (a == GLFW_REPEAT);
+    glfwState.onKeyboardEvent(action, key, scancode, repeat);
+  }
+}
+
+static void onTextEvent(GLFWwindow* window, unsigned int codepoint) {
+  if (glfwState.onTextEvent) {
+    glfwState.onTextEvent(codepoint);
   }
 }
 
@@ -81,7 +181,7 @@ static int convertMouseButton(MouseButton button) {
   }
 }
 
-static int convertKeyCode(KeyCode key) {
+static int convertKey(KeyboardKey key) {
   switch (key) {
     case KEY_W: return GLFW_KEY_W;
     case KEY_A: return GLFW_KEY_A;
@@ -105,7 +205,7 @@ void lovrPlatformPollEvents() {
   }
 }
 
-bool lovrPlatformCreateWindow(WindowFlags* flags) {
+bool lovrPlatformCreateWindow(const WindowFlags* flags) {
   if (glfwState.window) {
     return true;
   }
@@ -118,10 +218,18 @@ bool lovrPlatformCreateWindow(WindowFlags* flags) {
     return false;
   }
 
+
+#ifdef LOVR_LINUX_EGL
+  glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
+#endif
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+  glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, flags->debug);
+#ifndef LOVR_LINUX_EGL
+  glfwWindowHint(GLFW_CONTEXT_NO_ERROR, !flags->debug);
+#endif
   glfwWindowHint(GLFW_SAMPLES, flags->msaa);
   glfwWindowHint(GLFW_RESIZABLE, flags->resizable);
   glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_TRUE);
@@ -158,6 +266,7 @@ bool lovrPlatformCreateWindow(WindowFlags* flags) {
   glfwSetWindowSizeCallback(glfwState.window, onWindowResize);
   glfwSetMouseButtonCallback(glfwState.window, onMouseButton);
   glfwSetKeyCallback(glfwState.window, onKeyboardEvent);
+  glfwSetCharCallback(glfwState.window, onTextEvent);
   lovrPlatformSetSwapInterval(flags->vsync);
   return true;
 }
@@ -200,8 +309,8 @@ void* lovrPlatformGetProcAddress(const char* function) {
   return (void*) glfwGetProcAddress(function);
 }
 
-void lovrPlatformOnWindowClose(windowCloseCallback callback) {
-  glfwState.onWindowClose = callback;
+void lovrPlatformOnQuitRequest(quitCallback callback) {
+  glfwState.onQuitRequest = callback;
 }
 
 void lovrPlatformOnWindowFocus(windowFocusCallback callback) {
@@ -218,6 +327,10 @@ void lovrPlatformOnMouseButton(mouseButtonCallback callback) {
 
 void lovrPlatformOnKeyboardEvent(keyboardCallback callback) {
   glfwState.onKeyboardEvent = callback;
+}
+
+void lovrPlatformOnTextEvent(textCallback callback) {
+  glfwState.onTextEvent = callback;
 }
 
 void lovrPlatformGetMousePosition(double* x, double* y) {
@@ -239,8 +352,8 @@ bool lovrPlatformIsMouseDown(MouseButton button) {
   return glfwState.window ? glfwGetMouseButton(glfwState.window, convertMouseButton(button)) == GLFW_PRESS : false;
 }
 
-bool lovrPlatformIsKeyDown(KeyCode key) {
-  return glfwState.window ? glfwGetKey(glfwState.window, convertKeyCode(key)) == GLFW_PRESS : false;
+bool lovrPlatformIsKeyDown(KeyboardKey key) {
+  return glfwState.window ? glfwGetKey(glfwState.window, convertKey(key)) == GLFW_PRESS : false;
 }
 
 #ifdef _WIN32
@@ -250,5 +363,58 @@ HANDLE lovrPlatformGetWindow() {
 
 HGLRC lovrPlatformGetContext() {
   return glfwGetWGLContext(glfwState.window);
+}
+#endif
+
+#ifdef LOVR_LINUX_EGL
+PFNEGLGETPROCADDRESSPROC lovrPlatformGetEGLProcAddr(void)
+{
+  return (PFNEGLGETPROCADDRESSPROC)glfwGetProcAddress;
+}
+
+EGLDisplay lovrPlatformGetEGLDisplay(void)
+{
+  return glfwGetEGLDisplay();
+}
+
+EGLContext lovrPlatformGetEGLContext(void)
+{
+  return glfwGetEGLContext(glfwState.window);
+}
+
+EGLConfig lovrPlatformGetEGLConfig(void)
+{
+  EGLDisplay dpy = lovrPlatformGetEGLDisplay();
+  EGLContext ctx = lovrPlatformGetEGLContext();
+  EGLint cfg_id = -1;
+  EGLint num_cfgs = -1;
+  EGLConfig cfg = NULL;
+  PFNEGLQUERYCONTEXTPROC eglQueryContext = (PFNEGLQUERYCONTEXTPROC)glfwGetProcAddress("eglQueryContext");
+  PFNEGLCHOOSECONFIGPROC eglChooseConfig = (PFNEGLCHOOSECONFIGPROC)glfwGetProcAddress("eglChooseConfig");
+
+  eglQueryContext(dpy, ctx, EGL_CONFIG_ID, &cfg_id);
+  EGLint attrs [4] = {
+    EGL_CONFIG_ID, cfg_id,
+    EGL_NONE, EGL_NONE,
+  };
+  eglChooseConfig(dpy, attrs, &cfg, 1, &num_cfgs);
+  return cfg;
+}
+#endif
+
+#ifdef LOVR_LINUX_X11
+Display* lovrPlatformGetX11Display(void)
+{
+  return glfwGetX11Display();
+}
+
+GLXDrawable lovrPlatformGetGLXDrawable(void)
+{
+  return glfwGetGLXWindow(glfwState.window);
+}
+
+GLXContext lovrPlatformGetGLXContext(void)
+{
+  return glfwGetGLXContext(glfwState.window);
 }
 #endif

@@ -68,7 +68,7 @@ void _luax_registertype(lua_State* L, const char* name, const luaL_Reg* function
 
   // Register class functions
   if (functions) {
-    luaL_register(L, NULL, functions);
+    luax_register(L, functions);
   }
 
   // :release function
@@ -93,10 +93,23 @@ void* _luax_checktype(lua_State* L, int index, uint64_t hash, const char* debug)
   void* object = _luax_totype(L, index, hash);
 
   if (!object) {
-    luaL_typerror(L, index, debug);
+    luax_typeerror(L, index, debug);
   }
 
   return object;
+}
+
+int luax_typeerror(lua_State* L, int index, const char* expected) {
+  const char* name;
+  if (luaL_getmetafield(L, index, "__name") == LUA_TSTRING) {
+    name = lua_tostring(L, -1);
+  } else if (lua_type(L, index) == LUA_TLIGHTUSERDATA) {
+    name = "light userdata";
+  } else {
+    name = luaL_typename(L, index);
+  }
+  const char* message = lua_pushfstring(L, "%s expected, got %s", expected, name);
+  return luaL_argerror(L, index, message);
 }
 
 // Registers the userdata on the top of the stack in the registry.
@@ -154,7 +167,7 @@ void _luax_pushtype(lua_State* L, const char* type, uint64_t hash, void* object)
   lua_remove(L, -2);
 }
 
-int luax_checkenum(lua_State* L, int index, const StringEntry* map, const char* fallback, const char* label) {
+int _luax_checkenum(lua_State* L, int index, const StringEntry* map, const char* fallback, const char* label) {
   size_t length;
   const char* string = fallback ? luaL_optlstring(L, index, fallback, &length) : luaL_checklstring(L, index, &length);
 
@@ -175,20 +188,56 @@ void luax_registerloader(lua_State* L, lua_CFunction loader, int index) {
   lua_getglobal(L, "table");
   lua_getfield(L, -1, "insert");
   lua_getglobal(L, "package");
+#if LUA_VERSION_NUM == 501
   lua_getfield(L, -1, "loaders");
+#else
+  lua_getfield(L, -1, "searchers");
+#endif
   lua_remove(L, -2);
   if (lua_istable(L, -1)) {
     lua_pushinteger(L, index);
     lua_pushcfunction(L, loader);
     lua_call(L, 3, 0);
+  } else {
+    lua_pop(L, 2);
   }
   lua_pop(L, 1);
+}
+
+int luax_resume(lua_State* T, int n) {
+#if LUA_VERSION_NUM >= 504
+  int results;
+  return lua_resume(T, NULL, n, &results);
+#elif LUA_VERSION_NUM >= 502
+  return lua_resume(T, NULL, n);
+#else
+  return lua_resume(T, n);
+#endif
 }
 
 void luax_vthrow(void* context, const char* format, va_list args) {
   lua_State* L = (lua_State*) context;
   lua_pushvfstring(L, format, args);
   lua_error(L);
+}
+
+void luax_vlog(void* context, int level, const char* tag, const char* format, va_list args) {
+  static const char* levels[] = {
+    [LOG_DEBUG] = "debug",
+    [LOG_INFO] = "info",
+    [LOG_WARN] = "warn",
+    [LOG_ERROR] = "error"
+  };
+  lua_State* L = (lua_State*) context;
+  lua_getglobal(L, "lovr");
+  lua_getfield(L, -1, "log");
+  if (lua_type(L, -1) == LUA_TFUNCTION) {
+    lua_pushvfstring(L, format, args);
+    lua_pushstring(L, levels[level]);
+    lua_pushstring(L, tag);
+    lua_call(L, 3, 0);
+  }
+  lua_pop(L, 1);
 }
 
 // An implementation of luaL_traceback for Lua 5.1

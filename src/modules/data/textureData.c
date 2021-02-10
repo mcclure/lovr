@@ -388,7 +388,7 @@ static bool parseKTX(uint8_t* bytes, size_t size, TextureData* textureData) {
     textureData->mipmaps[i] = (Mipmap) { .width = width, .height = height, .data = data.u8 + sizeof(uint32_t), .size = *data.u32 };
     width = MAX(width >> 1, 1u);
     height = MAX(height >> 1, 1u);
-    data.u8 = (uint8_t*) ALIGN(data.u8 + sizeof(uint32_t) + *data.u32 + 3, 4);
+    data.u8 = (uint8_t*) ALIGN(data.u8 + sizeof(uint32_t) + *data.u32, 4);
   }
 
   return true;
@@ -524,7 +524,7 @@ TextureData* lovrTextureDataInitFromBlob(TextureData* textureData, Blob* blob, b
   }
 
   if (!textureData->blob->data) {
-    lovrThrow("Could not load texture data from '%s'", blob->name);
+    lovrThrow("Could not load TextureData from '%s': %s", blob->name, stbi_failure_reason());
     lovrRelease(Blob, textureData->blob);
     free(textureData);
     return NULL;

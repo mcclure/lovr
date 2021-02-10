@@ -5,9 +5,9 @@
 #pragma once
 
 #define LOVR_VERSION_MAJOR 0
-#define LOVR_VERSION_MINOR 13
+#define LOVR_VERSION_MINOR 14
 #define LOVR_VERSION_PATCH 0
-#define LOVR_VERSION_ALIAS "Very Velociraptor"
+#define LOVR_VERSION_ALIAS "Maximum Moss"
 
 #ifdef _WIN32
 #define LOVR_EXPORT __declspec(dllexport)
@@ -32,22 +32,26 @@
 #define MAX(a, b) (a > b ? a : b)
 #define MIN(a, b) (a < b ? a : b)
 #define CLAMP(x, min, max) MAX(min, MIN(max, x))
-#define ALIGN(p, n) ((uintptr_t) (p) & -n)
+#define ALIGN(p, n) (((uintptr_t) (p) + (n - 1)) & -n)
 #define CHECK_SIZEOF(T) int(*_o)[sizeof(T)]=1
 
 typedef struct Color { float r, g, b, a; } Color;
 
+// Error handling
 typedef void errorFn(void*, const char*, va_list);
-
 extern LOVR_THREAD_LOCAL errorFn* lovrErrorCallback;
 extern LOVR_THREAD_LOCAL void* lovrErrorUserdata;
-
-void lovrSetErrorCallback(errorFn* callback, void* context);
+void lovrSetErrorCallback(errorFn* callback, void* userdata);
 void LOVR_NORETURN lovrThrow(const char* format, ...);
-
 #define lovrAssert(c, ...) if (!(c)) { lovrThrow(__VA_ARGS__); }
 
-// FNV1a
+// Logging
+typedef void logFn(void*, int, const char*, const char*, va_list);
+enum { LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR };
+void lovrSetLogCallback(logFn* callback, void* userdata);
+void lovrLog(int level, const char* tag, const char* format, ...);
+
+// Hash function (FNV1a)
 static LOVR_INLINE uint64_t hash64(const void* data, size_t length) {
   const uint8_t* bytes = (const uint8_t*) data;
   uint64_t hash = 0xcbf29ce484222325;
@@ -59,14 +63,14 @@ static LOVR_INLINE uint64_t hash64(const void* data, size_t length) {
 
 #ifdef __ANDROID__
 #include <android/log.h>
-#define lovrLog(...) __android_log_print(ANDROID_LOG_DEBUG, "LOVR", __VA_ARGS__)
-#define lovrLogv(...) __android_log_vprint(ANDROID_LOG_DEBUG, "LOVR", __VA_ARGS__)
-#define lovrWarn(...) __android_log_print(ANDROID_LOG_WARN, "LOVR", __VA_ARGS__)
-#define lovrWarnv(...) __android_log_vprint(ANDROID_LOG_WARN, "LOVR", __VA_ARGS__)
+#define lovrLogRaw(...) __android_log_print(ANDROID_LOG_DEBUG, "LOVR", __VA_ARGS__)
+#define lovrLogRawv(...) __android_log_vprint(ANDROID_LOG_DEBUG, "LOVR", __VA_ARGS__)
+#define lovrWarnRaw(...) __android_log_print(ANDROID_LOG_WARN, "LOVR", __VA_ARGS__)
+#define lovrWarnRawv(...) __android_log_vprint(ANDROID_LOG_WARN, "LOVR", __VA_ARGS__)
 #else
 #include <stdio.h>
-#define lovrLog(...) printf(__VA_ARGS__)
-#define lovrLogv(...) vprintf(__VA_ARGS__)
-#define lovrWarn(...) fprintf(stderr, __VA_ARGS__)
-#define lovrWarnv(...) vfprintf(stderr, __VA_ARGS__)
+#define lovrLogRaw(...) printf(__VA_ARGS__)
+#define lovrLogRawv(...) vprintf(__VA_ARGS__)
+#define lovrWarnRaw(...) fprintf(stderr, __VA_ARGS__)
+#define lovrWarnRawv(...) vfprintf(stderr, __VA_ARGS__)
 #endif

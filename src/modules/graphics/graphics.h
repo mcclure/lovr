@@ -70,13 +70,6 @@ typedef enum {
 } Winding;
 
 typedef struct {
-  bool stereo;
-  struct Canvas* canvas;
-  float viewMatrix[2][16];
-  float projection[2][16];
-} Camera;
-
-typedef struct {
   float lineWidth;
   unsigned alphaSampling : 1;
   unsigned blendMode : 3; // BlendMode
@@ -92,15 +85,18 @@ typedef struct {
 } Pipeline;
 
 // Base
-bool lovrGraphicsInit(void);
+bool lovrGraphicsInit(bool debug);
 void lovrGraphicsDestroy(void);
 void lovrGraphicsPresent(void);
 void lovrGraphicsCreateWindow(WindowFlags* flags);
 int lovrGraphicsGetWidth(void);
 int lovrGraphicsGetHeight(void);
 float lovrGraphicsGetPixelDensity(void);
-const Camera* lovrGraphicsGetCamera(void);
-void lovrGraphicsSetCamera(Camera* camera, bool clear);
+void lovrGraphicsSetBackbuffer(struct Canvas* canvas, bool stereo, bool clear);
+void lovrGraphicsGetViewMatrix(uint32_t index, float* viewMatrix);
+void lovrGraphicsSetViewMatrix(uint32_t index, float* viewMatrix);
+void lovrGraphicsGetProjection(uint32_t index, float* projection);
+void lovrGraphicsSetProjection(uint32_t index, float* projection);
 struct Buffer* lovrGraphicsGetIdentityBuffer(void);
 #define lovrGraphicsTick lovrGpuTick
 #define lovrGraphicsTock lovrGpuTock
@@ -151,7 +147,6 @@ void lovrGraphicsTranslate(vec3 translation);
 void lovrGraphicsRotate(quat rotation);
 void lovrGraphicsScale(vec3 scale);
 void lovrGraphicsMatrixTransform(mat4 transform);
-void lovrGraphicsSetProjection(mat4 projection);
 
 // Rendering
 void lovrGraphicsFlush(void);
@@ -189,13 +184,13 @@ typedef struct {
 } GpuFeatures;
 
 typedef struct {
-  bool initialized;
   float pointSizes[2];
   int textureSize;
   int textureMSAA;
   float textureAnisotropy;
   int blockSize;
   int blockAlign;
+  int compute[3];
 } GpuLimits;
 
 typedef struct {
@@ -219,7 +214,7 @@ typedef struct {
   uint32_t instances;
 } DrawCommand;
 
-void lovrGpuInit(void* (*getProcAddress)(const char*));
+void lovrGpuInit(void* (*getProcAddress)(const char*), bool debug);
 void lovrGpuDestroy(void);
 void lovrGpuClear(struct Canvas* canvas, Color* color, float* depth, int* stencil);
 void lovrGpuCompute(struct Shader* shader, int x, int y, int z);
@@ -228,6 +223,7 @@ void lovrGpuDraw(DrawCommand* draw);
 void lovrGpuStencil(StencilAction action, int replaceValue, StencilCallback callback, void* userdata);
 void lovrGpuPresent(void);
 void lovrGpuDirtyTexture(void);
+void lovrGpuResetState(void);
 void lovrGpuTick(const char* label);
 double lovrGpuTock(const char* label);
 const GpuFeatures* lovrGpuGetFeatures(void);

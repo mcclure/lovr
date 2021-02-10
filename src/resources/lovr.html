@@ -7,7 +7,6 @@
         height: 100%;
         margin: 0;
         padding: 0;
-        overflow: hidden;
         font-family: 'sans-serif';
       }
 
@@ -15,11 +14,12 @@
         display: block;
         border-radius: 8px;
         background: #fff;
-        max-width: 80%;
-        width: 1080px;
+        max-width: 1080px;
+        width: 80%;
         height: auto;
         box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
         margin: 40px auto;
+        outline: none;
       }
 
       button {
@@ -37,7 +37,7 @@
 
   <body>
     <div class="container">
-      <canvas id="canvas" width="1080" height="600"></canvas>
+      <canvas id="canvas" width="1080" height="600" tabIndex="1"></canvas>
     </div>
 
     <script type="text/javascript">
@@ -46,49 +46,61 @@
       var button = document.createElement('button');
       button.textContent = 'Enter VR';
 
-      var context = canvas.getContext('webgl2', {
-        alpha: false,
-        antialias: true,
-        depth: true,
-        stencil: true,
-        preserveDrawingBuffer: true,
-        xrCompatible: true
-      });
-
       var Module = window.Module = {
-        arguments: ['./'],
-        preRun: [findDisplay],
+        arguments: [],
+        preRun: [],
         postRun: [],
         print: console.log.bind(console),
         printErr: console.error.bind(console),
         thisProgram: './lovr',
-        canvas: canvas,
-        preinitializedWebGLContext: context
+        canvas: canvas
       };
 
-      function findDisplay() {
-        if (navigator.getVRDisplays) {
-          Module.addRunDependency('lovrDisplay');
-          navigator.getVRDisplays().
-            then(function(displays) {
-              Module.lovrDisplay = displays[0];
-              container.appendChild(button);
-            }).finally(function() {
-              Module.removeRunDependency('lovrDisplay');
-            });
-        }
+      // To run a LÖVR project on this page, create a .lovr (zip) file of its folder and serve it
+      // alongside the HTML file.  Then set the 'project' variable below to the project's filename.
+      // This downloads the .lovr file into the virtual filesystem and adds it as a virtual command
+      // line argument before booting up LÖVR.
+      // Example: var project = 'app.lovr';
+      var project = null;
+      if (project) {
+        Module.arguments.push(project);
+        Module.preRun.push(function() {
+          Module.FS_createPreloadedFile('/', project, project, true, false);
+        });
       }
 
-      button.addEventListener('click', function() {
-        if (Module.lovrDisplay && Module.lovrDisplay.capabilities.canPresent) {
-          var eventName = Module.lovrDisplay.isPresenting ? 'lovr.exitvr' : 'lovr.entervr';
-          window.dispatchEvent(new CustomEvent(eventName));
-        }
-      });
+      // If WebXR is supported and immersive sessions are supported, add a button to the DOM that
+      // controls starting/stopping the immersive session.
+      if (navigator.xr) {
+        navigator.xr.isSessionSupported('immersive-vr').then(function(supported) {
+          if (!supported) return;
 
-      window.addEventListener('vrdisplaypresentchange', function() {
-        button.textContent = Module.lovrDisplay.isPresenting ? 'Exit VR' : 'Enter VR';
-      });
+          container.appendChild(button);
+
+          var active = false;
+
+          function onEnter() {
+            active = true;
+            button.textContent = 'Exit VR';
+          }
+
+          function onExit() {
+            active = false;
+            button.textContent = 'Enter VR';
+          }
+
+          button.addEventListener('click', function() {
+            if (!active) {
+              Module.lovr.enterVR().then(function(session) {
+                session.addEventListener('end', onExit);
+                onEnter();
+              });
+            } else {
+              Module.lovr.exitVR().then(onExit);
+            }
+          });
+        });
+      }
     </script>
 
     {{{ SCRIPT }}}

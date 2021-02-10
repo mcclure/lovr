@@ -15,7 +15,7 @@ static uint32_t luax_checkanimation(lua_State* L, int index, Model* model) {
       return (uint32_t) animationIndex;
     }
     case LUA_TNUMBER: return lua_tointeger(L, index) - 1;
-    default: return luaL_typerror(L, index, "number or string");
+    default: return luax_typeerror(L, index, "number or string");
   }
 }
 
@@ -59,7 +59,7 @@ static int l_lovrModelPose(lua_State* L) {
       break;
     }
     default:
-      return luaL_typerror(L, 2, "nil, number, or string");
+      return luax_typeerror(L, 2, "nil, number, or string");
   }
 
   int index = 3;
@@ -89,7 +89,7 @@ static int l_lovrModelGetMaterial(lua_State* L) {
       break;
     }
     default:
-      return luaL_typerror(L, 2, "nil, number, or string");
+      return luax_typeerror(L, 2, "nil, number, or string");
   }
 
   luax_pushtype(L, Material, lovrModelGetMaterial(model, material));
@@ -123,11 +123,11 @@ static int l_lovrModelGetNodePose(lua_State* L) {
       break;
     }
     default:
-      return luaL_typerror(L, 2, "number or string");
+      return luax_typeerror(L, 2, "number or string");
   }
 
   float position[4], rotation[4], angle, ax, ay, az;
-  CoordinateSpace space = luax_checkenum(L, 3, CoordinateSpaces, "global", "CoordinateSpace");
+  CoordinateSpace space = luax_checkenum(L, 3, CoordinateSpace, "global");
   lovrModelGetNodePose(model, node, position, rotation, space);
   lua_pushnumber(L, position[0]);
   lua_pushnumber(L, position[1]);
@@ -192,6 +192,12 @@ static int l_lovrModelGetAnimationDuration(lua_State* L) {
   return 1;
 }
 
+static int l_lovrModelHasJoints(lua_State* L) {
+  Model* model = luax_checktype(L, 1, Model);
+  lua_pushboolean(L, lovrModelGetModelData(model)->skinCount > 0);
+  return 1;
+}
+
 const luaL_Reg lovrModel[] = {
   { "draw", l_lovrModelDraw },
   { "animate", l_lovrModelAnimate },
@@ -206,5 +212,6 @@ const luaL_Reg lovrModel[] = {
   { "getMaterialCount", l_lovrModelGetMaterialCount },
   { "getNodeCount", l_lovrModelGetNodeCount },
   { "getAnimationDuration", l_lovrModelGetAnimationDuration },
+  { "hasJoints", l_lovrModelHasJoints },
   { NULL, NULL }
 };
